@@ -16,6 +16,10 @@
       "dest": "/api/proxy.js"
     },
     {
+      "src": "/(.*)\\.(css|js|json|png|jpg|ico|svg|webp|woff2?)",
+      "dest": "/$1.$2"
+    },
+    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
