@@ -841,9 +841,10 @@ body.light-theme .tv-chart-section { border-color: #d0d7de; }
     grid-template-columns: 1fr 340px;
     gap: 12px;
     margin-bottom: 12px;
+    align-items: start;
 }
 .tt-chart-col { min-width: 0; }
-.tt-panel-col { min-width: 0; align-self: start; }
+.tt-panel-col { min-width: 0; }
 
 .tt-sym-bar {
     display: flex;
