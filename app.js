@@ -575,7 +575,7 @@
             'chart_crosshair_menu','chart_multiple_instance',
             'symbol_search','keep_info_panel_open'
         ]);
-        return 'https://s.tradingview.com/widgetembed/?symbol=' + encodeURIComponent(symbol)
+        return 'https://www.tradingview.com/widgetembed/?symbol=' + encodeURIComponent(symbol)
             + '&interval=' + interval
             + '&theme=' + (isLight ? 'light' : 'dark')
             + '&style=1&locale=ru'
@@ -927,7 +927,7 @@
         _tradeInited = true;
 
         content.innerHTML = ''
-            + '<div class="tv-chart-section"><div class="tv-chart-container" id="tvTradeChart" style="height:400px"></div></div>'
+            + '<div class="tv-chart-section"><div class="tv-chart-container" id="tvTradeChart" style="height:320px"></div></div>'
             + '<div style="padding:12px 0;display:flex;gap:8px;flex-wrap:wrap">'
             + '<button class="tv-sym-btn" data-sym="BINANCE:BTCUSDT" style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg-2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">BTC 5m</button>'
             + '<button class="tv-sym-btn" data-sym="BINANCE:ETHUSDT" style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg-2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">ETH 5m</button>'

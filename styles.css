@@ -775,8 +775,8 @@ body.light-theme .detail-card .stats-value.negative { color: #cf222e !important;
 
 .tv-chart-container {
     width: 100%;
-    height: 400px;
-    min-height: 300px;
+    height: 320px;
+    min-height: 260px;
 }
 
 .tv-chart-container iframe {
@@ -816,7 +816,7 @@ body.light-theme .detail-card .stats-value.negative { color: #cf222e !important;
     .details-grid { grid-template-columns: 1fr; }
     .pnl-value { font-size: 28px; }
     .ab-grid { grid-template-columns: 1fr; }
-    .tv-chart-container { height: 280px; }
+    .tv-chart-container { height: 240px; }
     .ws-auth-section { padding: 16px; }
 }
 
@@ -830,6 +830,142 @@ body.light-theme .detail-card .stats-value.negative { color: #cf222e !important;
 
 /* TradingView sidebar fix */
 body.light-theme .tv-chart-section { border-color: #d0d7de; }
+
+/* ====================== TRADE TERMINAL ====================== */
+.tv-chart-section { max-width: 900px; margin-left: auto; margin-right: auto; }
+
+.tv-sym-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg-2);
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.15s ease;
+}
+.tv-sym-btn:hover { background: var(--hover-bg); border-color: var(--accent); color: var(--accent); }
+.tv-sym-btn:active { transform: scale(0.96); }
+
+.tr-mode-btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.15s ease;
+}
+.tr-mode-btn.active { background: rgba(76,127,110,0.12); color: var(--accent); font-weight: 700; }
+.tr-mode-btn:hover:not(.active) { background: var(--hover-bg); color: var(--text); }
+
+.tr-panel { border-top: 1px solid var(--border); }
+
+/* Backtest */
+.backtest-section { margin-top: 8px; }
+.bt-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+}
+.bt-body { display: flex; flex-direction: column; gap: 10px; }
+.bt-input-group { display: flex; flex-direction: column; gap: 6px; }
+.bt-input-label { font-size: 10px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
+.bt-input-row { display: flex; gap: 8px; align-items: center; }
+.bt-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    flex: 1;
+}
+.bt-input-wrap input {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    outline: none;
+    width: 100%;
+}
+.bt-input-prefix { color: var(--text-tertiary); font-size: 12px; font-weight: 600; }
+.bt-calc-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+}
+.bt-calc-btn:hover { opacity: 0.85; }
+.bt-quick-amounts { display: flex; gap: 4px; }
+.bt-qty-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card-bg-2);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+}
+.bt-qty-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--hover-bg); }
+.bt-results {
+    margin-top: 8px;
+    padding: 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+/* Profile auth */
+.profile-auth-btns { display: flex; gap: 8px; }
+.profile-auth-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg-2);
+    color: var(--text);
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+}
+.profile-auth-btn:hover { border-color: var(--accent); color: var(--accent); }
+.profile-auth-btn.profile-auth-signup.active,
+.profile-auth-btn.profile-auth-signin.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* ====================== SETTINGS MODAL ====================== */
 .ws-modal-overlay {
