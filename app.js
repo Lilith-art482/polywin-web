@@ -1024,7 +1024,7 @@
         if (sel) sel.innerHTML = '';
 
         try {
-            var text = await pageFetch(GAMMA_API + '/events?closed=false&limit=30&tag=' + encodeURIComponent(tag) + '&sort=volume24hr');
+            var text = await pageFetch(GAMMA_API + '/events?closed=false&limit=30&tag_slug=' + encodeURIComponent(tag) + '&sort=volume24hr');
             var data = JSON.parse(text);
             var events = Array.isArray(data) ? data : [];
 
