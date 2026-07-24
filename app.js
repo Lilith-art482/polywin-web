@@ -2509,16 +2509,16 @@
             if (nickField) nickField.style.display = register ? 'block' : 'none';
             if (promoField) promoField.style.display = register ? 'block' : 'none';
             if (signInBtn && signUpBtn) {
-                signInBtn.style.background = register ? 'rgba(139,148,158,0.12)' : 'var(--accent)';
-                signInBtn.style.color = register ? 'var(--text)' : '#fff';
-                signUpBtn.style.background = register ? 'var(--accent)' : 'rgba(139,148,158,0.12)';
-                signUpBtn.style.color = register ? '#fff' : 'var(--text)';
+                signInBtn.classList.toggle('active', !register);
+                signUpBtn.classList.toggle('active', register);
             }
+            var sb = $('profileSubmitBtn');
+            if (sb) sb.textContent = register ? 'Зарегистрироваться' : 'Войти';
             clearMsg();
         }
 
-        if (signInBtn) signInBtn.onclick = function() { setMode(false); var sb = $('profileSubmitBtn'); if (sb) sb.textContent = 'Войти'; };
-        if (signUpBtn) signUpBtn.onclick = function() { setMode(true); var sb = $('profileSubmitBtn'); if (sb) sb.textContent = 'Зарегистрироваться'; };
+        if (signInBtn) signInBtn.onclick = function() { setMode(false); };
+        if (signUpBtn) signUpBtn.onclick = function() { setMode(true); };
 
         document.querySelectorAll('#profileAuthForms input').forEach(function(inp) {
             inp.addEventListener('keydown', function(e) {
@@ -2527,13 +2527,13 @@
         });
 
         var submitBtn = document.createElement('button');
-        submitBtn.className = 'profile-auth-btn profile-auth-signup';
         submitBtn.id = 'profileSubmitBtn';
-        submitBtn.style.marginTop = '12px';
         submitBtn.textContent = 'Войти';
         var authBtns = document.querySelector('#profileAuthForms .profile-auth-btns');
         if (authBtns) authBtns.after(submitBtn);
         submitBtn.onclick = doAuth;
+
+        setMode(false);
 
         var promoBtn = $('profilePromoApplyBtn');
         if (promoBtn) {
