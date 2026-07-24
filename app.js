@@ -920,6 +920,11 @@
     }
 
     // ====================== TRADE TAB ======================
+    var _selectedMarket = null;
+    var _marketSearchTimer = null;
+    var _demoBalance = parseFloat(localStorage.getItem('polyDemoBalance')) || 100000;
+    var _demoPositions = JSON.parse(localStorage.getItem('polyDemoPositions') || '{}');
+
     function initTradeTab() {
         var content = $('trade-content');
         if (!content) return;
@@ -936,6 +941,12 @@
             +       '<button class="tv-sym-btn" data-sym="BINANCE:SOLUSDT">SOL 5m</button>'
             +       '<button class="tv-sym-btn" data-sym="BINANCE:XRPUSDT">XRP 5m</button>'
             +     '</div>'
+            +     '<div class="tt-market-selector" id="ttMarketSelector">'
+            +       '<svg class="tt-market-icon" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'
+            +       '<input type="text" class="tt-market-search" id="ttMarketSearch" placeholder="Поиск рынка Polymarket..." autocomplete="off">'
+            +       '<div class="tt-market-dropdown" id="ttMarketDropdown"></div>'
+            +     '</div>'
+            +     '<div id="ttSelectedMarket"></div>'
             +   '</div>'
             +   '<div class="tt-panel-col">'
             +     renderTradeTerminal()
@@ -953,9 +964,205 @@
             });
         });
 
+        setupMarketSearch();
         setupBacktest();
         renderTradeWallets();
         setTimeout(initCopyPanel, 100);
+    }
+
+    function setupMarketSearch() {
+        var input = $('ttMarketSearch');
+        var dropdown = $('ttMarketDropdown');
+        if (!input || !dropdown) return;
+
+        input.addEventListener('focus', function() {
+            if (input.value.trim().length >= 2) fetchMarkets(input.value.trim(), dropdown);
+            else if (!_selectedMarket) fetchMarkets('', dropdown);
+        });
+
+        input.addEventListener('input', function() {
+            clearTimeout(_marketSearchTimer);
+            var q = input.value.trim();
+            if (q.length < 2 && !_selectedMarket) {
+                fetchMarkets('', dropdown);
+            } else if (q.length >= 2) {
+                _marketSearchTimer = setTimeout(function() { fetchMarkets(q, dropdown); }, 300);
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.remove('open');
+            }
+        });
+    }
+
+    async function fetchMarkets(query, dropdown) {
+        dropdown.innerHTML = '<div class="tt-market-item-loading">Загрузка рынков...</div>';
+        dropdown.classList.add('open');
+
+        try {
+            var url = GAMMA_API + '/markets?closed=false&limit=30&active=true&order=volume24hr&ascending=false';
+            if (query) url = GAMMA_API + '/markets?closed=false&limit=20&active=true&_q=' + encodeURIComponent(query);
+
+            var text = await pageFetch(url);
+            var data = JSON.parse(text);
+            var markets = Array.isArray(data) ? data : [];
+
+            if (markets.length === 0) {
+                dropdown.innerHTML = '<div class="tt-market-item-loading">Рынки не найдены</div>';
+                return;
+            }
+
+            var html = '';
+            markets.forEach(function(m) {
+                if (!m.question) return;
+                var vol = m.volume ? '$' + fmtNum(m.volume) : '';
+                var outYes = m.outcomes ? JSON.parse(m.outcomes) : ['Yes', 'No'];
+                var prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : [];
+                var yesPrice = prices[0] ? (parseFloat(prices[0]) * 100).toFixed(0) + '¢' : '';
+                var cat = m.groupItemTitle || m.category || '';
+
+                html += '<div class="tt-market-item" data-market-id="' + (m.conditionId || m.id || '') + '">'
+                    + '<div class="tt-market-item-title">' + escHtml(m.question) + '</div>'
+                    + '<div class="tt-market-item-meta">'
+                    + (yesPrice ? '<span class="tt-market-item-price">Да ' + yesPrice + '</span>' : '')
+                    + (vol ? '<span>' + vol + '</span>' : '')
+                    + (cat ? '<span>' + escHtml(cat) + '</span>' : '')
+                    + '</div></div>';
+            });
+
+            dropdown.innerHTML = html;
+
+            dropdown.querySelectorAll('.tt-market-item').forEach(function(item) {
+                item.addEventListener('click', function() {
+                    var id = item.dataset.marketId;
+                    var market = markets.find(function(m) { return (m.conditionId || m.id) === id; });
+                    if (market) selectMarket(market);
+                    dropdown.classList.remove('open');
+                });
+            });
+        } catch(e) {
+            dropdown.innerHTML = '<div class="tt-market-item-loading">Ошибка загрузки: ' + escHtml(e.message) + '</div>';
+        }
+    }
+
+    function selectMarket(market) {
+        _selectedMarket = market;
+        var input = $('ttMarketSearch');
+        if (input) input.value = market.question || '';
+
+        var outYes = market.outcomes ? JSON.parse(market.outcomes) : ['Yes', 'No'];
+        var prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : [];
+        var yesPrice = prices[0] ? parseFloat(prices[0]) : 0;
+        var noPrice = prices[1] ? parseFloat(prices[1]) : 0;
+        var vol = market.volume ? '$' + fmtNum(market.volume) : '—';
+        var vol24 = market.volume24hr ? '$' + fmtNum(market.volume24hr) : '—';
+        var cat = market.groupItemTitle || market.category || '';
+        var endDate = market.endDate ? new Date(market.endDate).toLocaleDateString('ru-RU') : '';
+
+        var container = $('ttSelectedMarket');
+        if (!container) return;
+
+        container.innerHTML = '<div class="mk-trade-card">'
+            + '<div class="mk-trade-header">'
+            +   '<div class="mk-trade-title">' + escHtml(market.question) + '</div>'
+            +   '<div class="mk-trade-meta">'
+            +     '<span>Объём: ' + vol + '</span>'
+            +     '<span>24ч: ' + vol24 + '</span>'
+            +     (endDate ? '<span>Окончание: ' + endDate + '</span>' : '')
+            +     (cat ? '<span>' + escHtml(cat) + '</span>' : '')
+            +   '</div>'
+            + '</div>'
+            + '<div class="mk-trade-outcomes">'
+            +   '<div class="mk-outcome-row" data-side="Yes" data-price="' + yesPrice + '">'
+            +     '<span class="mk-outcome-name" style="color:var(--positive)">Да</span>'
+            +     '<span class="mk-outcome-price" style="color:var(--positive)">' + (yesPrice * 100).toFixed(0) + '¢</span>'
+            +   '</div>'
+            +   '<div class="mk-outcome-row" data-side="No" data-price="' + noPrice + '">'
+            +     '<span class="mk-outcome-name" style="color:var(--negative)">Нет</span>'
+            +     '<span class="mk-outcome-price" style="color:var(--negative)">' + (noPrice * 100).toFixed(0) + '¢</span>'
+            +   '</div>'
+            + '</div>'
+            + '<div class="mk-trade-actions">'
+            +   '<div class="mk-trade-input-row">'
+            +     '<input type="number" class="mk-trade-amount" id="mkTradeAmount" value="100" min="1" step="10" placeholder="Сумма ($)">'
+            +   '</div>'
+            +   '<div class="mk-trade-input-row">'
+            +     '<button class="mk-trade-btn buy-yes" id="mkBuyYes">Купить Да</button>'
+            +     '<button class="mk-trade-btn buy-no" id="mkBuyNo">Купить Нет</button>'
+            +   '</div>'
+            +   '<div class="mk-trade-potential" id="mkTradePotential"></div>'
+            + '</div>'
+            + '</div>';
+
+        container.querySelectorAll('.mk-outcome-row').forEach(function(row) {
+            row.addEventListener('click', function() {
+                container.querySelectorAll('.mk-outcome-row').forEach(function(r) { r.classList.remove('selected'); });
+                row.classList.add('selected');
+                updateMkPotential();
+            });
+        });
+
+        var amountInput = $('mkTradeAmount');
+        if (amountInput) amountInput.addEventListener('input', updateMkPotential);
+
+        var buyYesBtn = $('mkBuyYes');
+        var buyNoBtn = $('mkBuyNo');
+        if (buyYesBtn) buyYesBtn.addEventListener('click', function() { executeDemoTrade('Yes'); });
+        if (buyNoBtn) buyNoBtn.addEventListener('click', function() { executeDemoTrade('No'); });
+
+        updateDemoBalanceDisplay();
+    }
+
+    function updateMkPotential() {
+        var el = $('mkTradePotential');
+        if (!el || !_selectedMarket) return;
+        var prices = _selectedMarket.outcomePrices ? JSON.parse(_selectedMarket.outcomePrices) : [];
+        var amount = parseFloat(($('mkTradeAmount') || {}).value) || 0;
+        var selected = document.querySelector('.mk-outcome-row.selected');
+        if (!selected || !amount) { el.textContent = ''; return; }
+
+        var side = selected.dataset.side;
+        var price = parseFloat(selected.dataset.price);
+        var shares = amount / price;
+        var profit = shares - amount;
+
+        el.textContent = '≈ ' + shares.toFixed(1) + ' акций • Прибыль: +$' + profit.toFixed(2);
+    }
+
+    function executeDemoTrade(side) {
+        if (!_selectedMarket) return;
+        var amountInput = $('mkTradeAmount');
+        var amount = parseFloat(amountInput ? amountInput.value : 0);
+        if (!amount || amount <= 0) { showMsg('Введите сумму'); return; }
+        if (amount > _demoBalance) { showMsg('Недостаточно средств на демо-счёте'); return; }
+
+        var prices = _selectedMarket.outcomePrices ? JSON.parse(_selectedMarket.outcomePrices) : [];
+        var price = side === 'Yes' ? parseFloat(prices[0] || 0.5) : parseFloat(prices[1] || 0.5);
+        var shares = amount / price;
+
+        _demoBalance -= amount;
+        var marketId = _selectedMarket.conditionId || _selectedMarket.id;
+        if (!_demoPositions[marketId]) _demoPositions[marketId] = { market: _selectedMarket, trades: [] };
+        _demoPositions[marketId].trades.push({
+            side: side,
+            amount: amount,
+            price: price,
+            shares: shares,
+            time: Date.now()
+        });
+
+        localStorage.setItem('polyDemoBalance', String(_demoBalance));
+        localStorage.setItem('polyDemoPositions', JSON.stringify(_demoPositions));
+
+        updateDemoBalanceDisplay();
+        showMsg('Демо-сделка: ' + side + ' на $' + amount + ' (' + shares.toFixed(1) + ' акций)', true);
+    }
+
+    function updateDemoBalanceDisplay() {
+        var el = $('demoBalance');
+        if (el) el.textContent = '$' + fmtNum(_demoBalance.toFixed(2));
     }
 
     function renderTradeTerminal() {
