@@ -955,6 +955,7 @@
 
         setupBacktest();
         renderTradeWallets();
+        setTimeout(initCopyPanel, 100);
     }
 
     function renderTradeTerminal() {
@@ -989,8 +990,12 @@
         html += '</div></div>';
 
         html += '<div class="tr-panel" id="trCopyPanel" style="display:none">';
-        html += '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:11px">';
-        html += '<p>Копи-трейдинг доступен через расширение PolyWin</p>';
+        html += '<div class="cp-wrap">';
+        html += '<div class="cp-header"><span class="cp-title">Копи-трейдинг</span><span class="cp-subtitle">Выберите кошелёк для копирования</span></div>';
+        html += '<div class="cp-wallets" id="cpWalletsList"></div>';
+        html += '<div class="cp-selected" id="cpSelectedInfo" style="display:none"></div>';
+        html += '<div class="cp-trades" id="cpTradesList" style="display:none"></div>';
+        html += '<div class="cp-log" id="cpLogSection" style="display:none"></div>';
         html += '</div></div>';
 
         html += '</div>';
@@ -1018,7 +1023,233 @@
         section.innerHTML = html;
     }
 
-    function setupBacktest() {
+    // ====================== COPY TRADING ======================
+    var _cpSelectedWallet = null;
+    var _cpIsCopying = false;
+    var _cpCopyLog = [];
+    var _cpCopyTimer = null;
+
+    function initCopyPanel() {
+        var list = $('cpWalletsList');
+        if (!list) return;
+        var favs = JSON.parse(localStorage.getItem('polyFavorites') || '[]');
+        if (favs.length === 0) {
+            list.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-tertiary);font-size:11px">Добавьте кошельки в избранное</div>';
+            return;
+        }
+        var html = '';
+        favs.forEach(function(f) {
+            var short = f.address ? f.address.substring(0, 6) + '...' + f.address.substring(38) : '';
+            var initials = (f.name || short || '?').substring(0, 2).toUpperCase();
+            html += '<div class="cp-wallet-item" data-addr="' + f.address + '">';
+            html += '<div class="cp-wallet-avatar">' + escHtml(initials) + '</div>';
+            html += '<div class="cp-wallet-info"><span class="cp-wallet-name">' + escHtml(f.name || short) + '</span>';
+            html += '<span class="cp-wallet-addr">' + short + '</span></div>';
+            html += '<span class="cp-wallet-pnl" id="cpPnl_' + f.address.substring(0, 8) + '">...</span>';
+            html += '</div>';
+        });
+        list.innerHTML = html;
+
+        list.querySelectorAll('.cp-wallet-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                list.querySelectorAll('.cp-wallet-item').forEach(function(i) { i.classList.remove('active'); });
+                item.classList.add('active');
+                selectCopyWallet(item.dataset.addr);
+            });
+        });
+    }
+
+    async function selectCopyWallet(addr) {
+        _cpSelectedWallet = addr;
+        var info = $('cpSelectedInfo');
+        var trades = $('cpTradesList');
+        if (!info || !trades) return;
+
+        info.style.display = 'block';
+        trades.style.display = 'none';
+        info.innerHTML = '<div style="text-align:center;color:var(--text-tertiary);font-size:11px;padding:8px">Загрузка...</div>';
+
+        try {
+            var text = await pageFetch(DATA_API + '/v1/trades?user=' + addr + '&limit=30');
+            var allTrades = tryParseJSON(text, []);
+            if (!Array.isArray(allTrades)) allTrades = [];
+
+            var wins = 0, losses = 0, pnl = 0;
+            allTrades.forEach(function(t) {
+                if (t.pnl) {
+                    var p = parseFloat(t.pnl);
+                    pnl += p;
+                    if (p > 0) wins++;
+                    else if (p < 0) losses++;
+                }
+            });
+            var total = wins + losses;
+            var wr = total > 0 ? (wins / total * 100) : 0;
+
+            var short = addr.substring(0, 6) + '...' + addr.substring(38);
+            var isCopying = _cpIsCopying && _cpSelectedWallet === addr;
+
+            var html = '<div class="cp-selected-header">';
+            html += '<span class="cp-selected-name">' + short + '</span>';
+            html += '<button class="cp-copy-btn ' + (isCopying ? 'stop' : 'start') + '" id="cpToggleBtn">';
+            html += isCopying ? 'Остановить' : 'Копировать';
+            html += '</button></div>';
+
+            html += '<div class="cp-stats-row">';
+            html += '<div class="cp-stat"><span class="cp-stat-label">Сделок</span><span class="cp-stat-value">' + allTrades.length + '</span></div>';
+            html += '<div class="cp-stat"><span class="cp-stat-label">Win Rate</span><span class="cp-stat-value" style="color:' + (wr >= 50 ? 'var(--positive)' : 'var(--negative)') + '">' + wr.toFixed(0) + '%</span></div>';
+            html += '<div class="cp-stat"><span class="cp-stat-label">PNL</span><span class="cp-stat-value" style="color:' + (pnl >= 0 ? 'var(--positive)' : 'var(--negative)') + '">' + (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl)) + '</span></div>';
+            html += '</div>';
+
+            var pnlEl = $('cpPnl_' + addr.substring(0, 8));
+            if (pnlEl) {
+                pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl));
+                pnlEl.style.color = pnl >= 0 ? 'var(--positive)' : 'var(--negative)';
+            }
+
+            info.innerHTML = html;
+
+            var toggleBtn = $('cpToggleBtn');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', function() {
+                    if (_cpIsCopying && _cpSelectedWallet === addr) {
+                        stopCopyTrading();
+                    } else {
+                        startCopyTrading(addr, allTrades);
+                    }
+                });
+            }
+
+            var recentTrades = allTrades.slice(0, 10);
+            if (recentTrades.length > 0) {
+                var tHtml = '';
+                recentTrades.forEach(function(t) {
+                    var side = (t.side || '').toLowerCase();
+                    var isBuy = side === 'buy' || side === 'BUY';
+                    var price = t.price ? parseFloat(t.price) : 0;
+                    var amount = t.amount ? parseFloat(t.amount) : 0;
+                    var title = t.title || t.question || t.market || '';
+                    if (!title && t.conditionId) title = t.conditionId.substring(0, 12) + '...';
+
+                    tHtml += '<div class="cp-trade">';
+                    tHtml += '<span class="cp-trade-side ' + (isBuy ? 'buy' : 'sell') + '">' + (isBuy ? 'BUY' : 'SELL') + '</span>';
+                    tHtml += '<span class="cp-trade-title">' + escHtml(title.substring(0, 40)) + '</span>';
+                    tHtml += '<span class="cp-trade-amount">$' + (amount * price).toFixed(0) + '</span>';
+                    tHtml += '</div>';
+                });
+                trades.innerHTML = tHtml;
+                trades.style.display = 'block';
+            }
+        } catch(e) {
+            info.innerHTML = '<div style="text-align:center;color:var(--negative);font-size:11px;padding:8px">Ошибка: ' + escHtml(e.message) + '</div>';
+        }
+
+        if (_cpCopyLog.length > 0) renderCopyLog();
+    }
+
+    function startCopyTrading(addr, trades) {
+        _cpIsCopying = true;
+        _cpSelectedWallet = addr;
+        _cpCopyLog = [];
+
+        _cpCopyTimer = setInterval(function() {
+            if (!_cpIsCopying) return;
+            var demo = getDemoState();
+            var trade = trades[Math.floor(Math.random() * trades.length)];
+            if (!trade) return;
+
+            var side = (trade.side || '').toLowerCase();
+            var isBuy = side === 'buy' || side === 'BUY';
+            var price = trade.price ? parseFloat(trade.price) : 0.5;
+            var amount = Math.min(demo.balance * 0.05, 500);
+            if (amount < 10) return;
+
+            var title = trade.title || trade.question || trade.market || 'Сделка';
+            if (!title && trade.conditionId) title = trade.conditionId.substring(0, 16) + '...';
+
+            if (isBuy) {
+                var shares = amount / price;
+                demo.balance -= amount;
+                demo.positions.push({
+                    id: 'cp_' + Date.now(),
+                    title: title.substring(0, 60),
+                    side: 'BUY',
+                    price: price,
+                    shares: shares,
+                    buyAmount: amount,
+                    createdAt: Date.now()
+                });
+            } else {
+                var posIdx = demo.positions.findIndex(function(p) { return p.title && p.title.indexOf(title.substring(0, 10)) !== -1; });
+                if (posIdx !== -1) {
+                    var pos = demo.positions[posIdx];
+                    var sellVal = pos.shares * price;
+                    var pnl = sellVal - pos.buyAmount;
+                    demo.balance += sellVal;
+                    demo.history.push({
+                        title: pos.title,
+                        side: 'SELL',
+                        price: price,
+                        amount: pos.buyAmount,
+                        pnl: pnl,
+                        status: 'closed',
+                        closedAt: Date.now()
+                    });
+                    demo.positions.splice(posIdx, 1);
+                } else {
+                    demo.balance -= amount;
+                    demo.positions.push({
+                        id: 'cp_' + Date.now(),
+                        title: title.substring(0, 60),
+                        side: 'BUY',
+                        price: price,
+                        shares: amount / price,
+                        buyAmount: amount,
+                        createdAt: Date.now()
+                    });
+                }
+            }
+
+            saveDemoState(demo);
+            var balEl = $('demoBalance');
+            if (balEl) balEl.textContent = '$' + demo.balance.toFixed(2);
+
+            _cpCopyLog.unshift({
+                time: Date.now(),
+                title: title.substring(0, 30),
+                side: isBuy ? 'BUY' : 'SELL',
+                amount: amount
+            });
+            if (_cpCopyLog.length > 20) _cpCopyLog.length = 20;
+            renderCopyLog();
+        }, 8000);
+
+        selectCopyWallet(addr);
+    }
+
+    function stopCopyTrading() {
+        _cpIsCopying = false;
+        if (_cpCopyTimer) { clearInterval(_cpCopyTimer); _cpCopyTimer = null; }
+        if (_cpSelectedWallet) selectCopyWallet(_cpSelectedWallet);
+    }
+
+    function renderCopyLog() {
+        var section = $('cpLogSection');
+        if (!section) return;
+        if (_cpCopyLog.length === 0) { section.style.display = 'none'; return; }
+        section.style.display = 'block';
+        var html = '<div class="cp-log-title">История копирования</div>';
+        _cpCopyLog.forEach(function(entry) {
+            var t = new Date(entry.time);
+            var time = t.getHours().toString().padStart(2, '0') + ':' + t.getMinutes().toString().padStart(2, '0');
+            html += '<div class="cp-log-item">';
+            html += '<span class="cp-log-time">' + time + '</span>';
+            html += '<span class="cp-log-action"><span class="cp-trade-side ' + (entry.side === 'BUY' ? 'buy' : 'sell') + '">' + entry.side + '</span> ' + escHtml(entry.title) + '</span>';
+            html += '<span class="cp-log-pnl" style="color:var(--text-tertiary)">$' + entry.amount.toFixed(0) + '</span>';
+            html += '</div>';
+        });
+        section.innerHTML = html;
+    }
         setTimeout(function() {
             var calcBtn = $('btCalcBtn');
             if (!calcBtn) return;
@@ -1057,17 +1288,16 @@
             document.querySelectorAll('.tr-mode-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
                     document.querySelectorAll('.tr-mode-btn').forEach(function(b) {
-                        b.style.background = 'transparent';
-                        b.style.color = 'var(--text-secondary)';
+                        b.classList.remove('active');
                     });
-                    btn.style.background = 'rgba(76,127,110,0.12)';
-                    btn.style.color = 'var(--accent)';
+                    btn.classList.add('active');
                     ['trDemoPanel','trLivePanel','trCopyPanel'].forEach(function(id) {
                         var el = $(id);
                         if (el) el.style.display = 'none';
                     });
                     var panel = $('tr' + btn.dataset.mode.charAt(0).toUpperCase() + btn.dataset.mode.slice(1) + 'Panel');
                     if (panel) panel.style.display = 'block';
+                    if (btn.dataset.mode === 'copy') initCopyPanel();
                 });
             });
         }, 100);
