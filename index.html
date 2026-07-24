@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PolyWin — Trading Terminal</title>
+    <link rel="icon" href="assets/polywin_20.png" type="image/png">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <div id="poly-stats-sidebar">
+            <div class="sidebar-scroll">
+                <!-- Header / Top Bar -->
+                <div class="wa-section" data-section="1">
+                    <div class="sidebar-topbar">
+                        <div class="sidebar-brand">
+                            <img src="assets/polywin.png" alt="PolyWin" style="width:28px;height:28px;border-radius:8px">
+                            <div>
+                                <span style="font-weight:800;font-size:15px">PolyWin</span>
+                                <span class="sidebar-brand-sub">Trading Terminal</span>
+                            </div>
+                        </div>
+                        <div class="topbar-actions">
+                            <button class="icon-btn" id="themeToggle" title="Тема">
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                            </button>
+                            <button class="icon-btn" id="settingsQuickBtn" title="Настройки">
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                            </button>
+                            <button class="hamburger-btn" id="hamburgerBtn" title="Menu">
+                                <span class="hamburger-line"></span>
+                                <span class="hamburger-line"></span>
+                                <span class="hamburger-line"></span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dropdown Menu -->
+                <div class="sidebar-menu" id="sidebarMenu">
+                    <div class="menu-group">
+                        <div class="menu-group-header" data-group="trade">
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+                            <span>Торговля</span>
+                            <svg class="menu-group-arrow" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                        </div>
+                        <div class="menu-sub">
+                            <button class="menu-item" data-tab="trade"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg><span>Терминал</span></button>
+                            <button class="menu-item" data-tab="alerts"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg><span>Алерты</span></button>
+                            <button class="menu-item" data-tab="calls"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm0 14H4V4h16v12z"/></svg><span>Коллы</span></button>
+                            <button class="menu-item" data-tab="favorites"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg><span>Трекер и избранное</span></button>
+                            <button class="menu-item" data-tab="my-trades"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg><span>Мои сделки</span></button>
+                        </div>
+                    </div>
+                    <div class="menu-group">
+                        <div class="menu-group-header" data-group="analysis">
+                            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7v-7zm4-3h2v10h-2V7zm4 6h2v4h-2v-4z"/></svg>
+                            <span>Анализ</span>
+                            <svg class="menu-group-arrow" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                        </div>
+                        <div class="menu-sub">
+                            <button class="menu-item" data-tab="wallet"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg><span>Анализ кошельков</span></button>
+                            <button class="menu-item" data-tab="whale"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><span>Киты и умные кошельки</span></button>
+                            <button class="menu-item" data-tab="smart-alerts"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg><span>Смарт.Алерты</span></button>
+                            <button class="menu-item" data-tab="scanner"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span>Сканер коэффициентов</span></button>
+                            <button class="menu-item" data-tab="x-sentiment"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M22 3.01L22 3.01l-8 8L22 20h-6l-5-6-6 6H1l8-8L1 3h6l5 6 6-6h4z"/></svg><span>Анализ X</span></button>
+                            <button class="menu-item" data-tab="weather"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg><span>Ставки на погоду: анализ</span></button>
+                            <button class="menu-item" data-tab="news-hub"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z"/></svg><span>Хаб новостей</span></button>
+                            <button class="menu-item" data-tab="new-market"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><span>Новые рынки</span></button>
+                        </div>
+                    </div>
+                    <button class="menu-item" data-tab="education"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z"/></svg><span>Обучающая платформа</span></button>
+                    <button class="menu-item" data-tab="profile"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg><span>Профиль</span></button>
+                    <div class="menu-divider"></div>
+                    <button class="menu-item" data-tab="settings"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg><span>Настройки</span></button>
+                </div>
+
+                <!-- Welcome Screen (not authenticated) -->
+                <div id="welcome-screen">
+                    <div class="ws-hero">
+                        <div class="ws-logo-icon" style="background-image: url('assets/polywin.png');"></div>
+                        <h1 class="ws-title">PolyWin</h1>
+                        <p class="ws-subtitle">Торговый терминал для Polymarket</p>
+                    </div>
+                    <div class="ws-auth-section">
+                        <div class="ws-divider"><span>Начните работу</span></div>
+                        <div class="profile-msg" id="profileMsg"></div>
+                        <div id="profileAuthForms">
+                            <div class="profile-field" id="profileNickField" style="display:none">
+                                <label>Никнейм</label>
+                                <input type="text" id="profileNick" placeholder="Ваш никнейм" autocomplete="username">
+                            </div>
+                            <div class="profile-field">
+                                <label>Email</label>
+                                <input type="email" id="profileEmail" placeholder="your@email.com" autocomplete="email">
+                            </div>
+                            <div class="profile-field">
+                                <label>Пароль</label>
+                                <input type="password" id="profilePassword" placeholder="••••••••" autocomplete="current-password">
+                            </div>
+                            <div class="profile-field" id="profilePromoField" style="display:none">
+                                <label>Промокод (если есть)</label>
+                                <div class="profile-promo-row">
+                                    <input type="text" id="profilePromoInput" placeholder="polywin-никнейм" autocomplete="off">
+                                    <button class="profile-promo-apply" id="profilePromoApplyBtn">Применить</button>
+                                </div>
+                                <div class="profile-promo-status" id="profilePromoStatus"></div>
+                            </div>
+                            <div class="profile-auth-btns">
+                                <button class="profile-auth-btn profile-auth-signup" id="profileShowSignUp">
+                                    <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                                    <span>Регистрация</span>
+                                </button>
+                                <button class="profile-auth-btn profile-auth-signin" id="profileSignInBtn">
+                                    <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11 7L9.6 8.4l2.6 2.6H2v2h10.2l-2.6 2.6L11 17l5-5-5-5zm9 12h-8v2h8c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-8v2h8v14z"/></svg>
+                                    <span>Войти</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- About Section -->
+                    <div class="ab-wrap">
+                        <div class="ab-title">О PolyWin</div>
+                        <p class="ab-intro">Полный набор инструментов для профессиональной торговли на Polymarket</p>
+                        <div class="ab-grid">
+                            <div class="ab-card" style="--ac:#4C7F6E">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></div>
+                                <div class="ab-card-body"><h4>Торговый терминал</h4><p>Создавайте и управляйте кошельками, отслеживайте торговую статистику, занимайтесь копитрейдингом</p></div>
+                            </div>
+                            <div class="ab-card" style="--ac:#388bfd">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></div>
+                                <div class="ab-card-body"><h4>Анализ кошельков</h4><p>Изучайте статистику сделок, PNL, Whale-метрики, скоринг и AI-анализ кошельков</p></div>
+                            </div>
+                            <div class="ab-card" style="--ac:#f0883e">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg></div>
+                                <div class="ab-card-body"><h4>Киты и smart кошельки</h4><p>Готовый список китов и smart кошельков со скорингом и AI-анализом</p></div>
+                            </div>
+                            <div class="ab-card" style="--ac:#f85149">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></div>
+                                <div class="ab-card-body"><h4>Смарт.Алерты</h4><p>Отслеживайте крупные заходы во всех рынках и событиях</p></div>
+                            </div>
+                            <div class="ab-card" style="--ac:#e3b341">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M21 6h-2v2h-2V6h-2V4h2V2h2v2h2v2zm-10 3c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm0 4c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></div>
+                                <div class="ab-card-body"><h4>Сканер коэффициентов</h4><p>Поиск арбитражных возможностей и AI-оценка справедливой цены</p></div>
+                            </div>
+                            <div class="ab-card" style="--ac:#1da1f2">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M22 3.01L22 3.01l-8 8L22 20h-6l-5-6-6 6H1l8-8L1 3h6l5 6 6-6h4z"/></svg></div>
+                                <div class="ab-card-body"><h4>Анализ X</h4><p>Анализ настроений X (Twitter) для прогноза рынков</p></div>
+                            </div>
+                            <div class="ab-card" style="--ac:#58a6ff">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg></div>
+                                <div class="ab-card-body"><h4>Ставки на погоду</h4><p>Анализ погодных рынков: тепловые карты, ветер, осадки</p></div>
+                            </div>
+                            <div class="ab-card" style="--ac:#3fb950">
+                                <div class="ab-card-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z"/></svg></div>
+                                <div class="ab-card-body"><h4>Хаб новостей</h4><p>Отслеживайте важные новости, микро-макро показатели</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Contents -->
+                <div class="nav-tab-content" id="wallet-tab">
+                    <div class="wa-section">
+                        <div class="stats-header">
+                            <div class="header-top">
+                                <div class="header-info">
+                                    <div class="profile-info"><span id="profile-name">Загрузка...</span></div>
+                                    <div class="account-age" id="account-age"></div>
+                                </div>
+                                <div class="header-actions">
+                                    <button class="icon-btn" id="addFavoriteBtn" title="Add to favorites"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27z"/></svg></button>
+                                    <button class="icon-btn" id="copyAddrBtn" title="Copy address"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+                                </div>
+                            </div>
+                            <div class="ws-search">
+                                <svg class="ws-search-icon" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                                <input type="text" id="ws-search-input" placeholder="Поиск кошелька (0x... или @username)" spellcheck="false">
+                            </div>
+                        </div>
+                        <div class="main-pnl-card">
+                            <div class="pnl-label">Объективный PNL</div>
+                            <div class="pnl-value" id="pnl-val">$0.00</div>
+                        </div>
+                        <div class="wallet-strength-card" id="wallet-strength-card"></div>
+                        <div class="stats-grid" id="statsGrid"></div>
+                        <div class="details-grid" id="detailsGrid"></div>
+                        <div id="wallet-history"></div>
+                    </div>
+                </div>
+                <div class="nav-tab-content" id="trade-tab"><div id="trade-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Торговый терминал загружается...</p></div></div>
+                <div class="nav-tab-content" id="whale-tab"><div id="whale-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Загрузка данных о китах...</p></div></div>
+                <div class="nav-tab-content" id="calls-tab"><div id="calls-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Загрузка коллов...</p></div></div>
+                <div class="nav-tab-content" id="favorites-tab"><div id="favorites-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Загрузка избранного...</p></div></div>
+                <div class="nav-tab-content" id="my-trades-tab"><div id="my-trades-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Загрузка истории сделок...</p></div></div>
+                <div class="nav-tab-content" id="alerts-tab"><div id="alerts-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Загрузка алертов...</p></div></div>
+                <div class="nav-tab-content" id="smart-alerts-tab"><div id="smart-alerts-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Загрузка смарт-алертов...</p></div></div>
+                <div class="nav-tab-content" id="scanner-tab"><div id="scanner-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Сканер коэффициентов</p></div></div>
+                <div class="nav-tab-content" id="x-sentiment-tab"><div id="x-sentiment-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Анализ X (Twitter)</p></div></div>
+                <div class="nav-tab-content" id="weather-tab"><div id="weather-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Ставки на погоду: анализ</p></div></div>
+                <div class="nav-tab-content" id="news-hub-tab"><div id="news-hub-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Хаб новостей</p></div></div>
+                <div class="nav-tab-content" id="new-market-tab"><div id="new-market-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Новые рынки</p></div></div>
+                <div class="nav-tab-content" id="education-tab"><div id="education-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Обучающая платформа</p></div></div>
+                <div class="nav-tab-content" id="profile-tab"><div id="profile-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Профиль</p></div></div>
+                <div class="nav-tab-content" id="settings-tab"><div id="settings-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Настройки</p></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, Timestamp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDXPaMdMeCN7YA1FB_VHGocVrZZL5czX7E",
+            authDomain: "polymarket-ai-99bf6.firebaseapp.com",
+            projectId: "polymarket-ai-99bf6",
+            storageBucket: "polymarket-ai-99bf6.firebasestorage.app",
+            messagingSenderId: "1039609396263",
+            appId: "1:1039609396263:web:63add757eba79f30f5e202"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        window.__fbApp = app;
+        window.__fbAuth = auth;
+        window.__fbDb = db;
+        window.__fbOnAuthStateChanged = onAuthStateChanged;
+        window.__fbCreateUser = createUserWithEmailAndPassword;
+        window.__fbSignIn = signInWithEmailAndPassword;
+        window.__fbSignOut = signOut;
+        window.__fbUpdateProfile = updateProfile;
+        window.__fbGetDoc = getDoc;
+        window.__fbSetDoc = setDoc;
+        window.__fbDoc = doc;
+        window.__fbCollection = collection;
+        window.__fbGetDocs = getDocs;
+        window.__fbQuery = query;
+        window.__fbWhere = where;
+        window.__fbTimestamp = Timestamp;
+
+        console.log('Firebase initialized');
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>
