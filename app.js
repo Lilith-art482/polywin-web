@@ -921,15 +921,42 @@
 
     // ====================== TRADE TAB ======================
     var _selectedMarket = null;
-    var _marketSearchTimer = null;
+    var _selectedEvent = null;
+    var _activeCategory = null;
     var _demoBalance = parseFloat(localStorage.getItem('polyDemoBalance')) || 100000;
     var _demoPositions = JSON.parse(localStorage.getItem('polyDemoPositions') || '{}');
+
+    var MARKET_CATEGORIES = [
+        { tag: 'politics', label: 'Политика', icon: '🏛️' },
+        { tag: 'sports', label: 'Спорт', icon: '⚽' },
+        { tag: 'crypto', label: 'Криптовалюта', icon: '₿' },
+        { tag: 'esports', label: 'Киберспорт', icon: '🎮' },
+        { tag: 'iran', label: 'Иран', icon: '🇮🇷' },
+        { tag: 'finance', label: 'Финансы', icon: '📈' },
+        { tag: 'geopolitics', label: 'Геополитика', icon: '🌍' },
+        { tag: 'technology', label: 'Технологии', icon: '💻' },
+        { tag: 'culture', label: 'Культура', icon: '🎭' },
+        { tag: 'economics', label: 'Экономика', icon: '💰' },
+        { tag: 'weather', label: 'Погода', icon: '🌤️' },
+        { tag: 'mentions', label: 'Упоминания', icon: '📢' },
+        { tag: 'elections', label: 'Выборы', icon: '🗳️' },
+        { tag: 'art', label: 'Искусство', icon: '🎨' }
+    ];
 
     function initTradeTab() {
         var content = $('trade-content');
         if (!content) return;
         if (_tradeInited) return;
         _tradeInited = true;
+
+        var catHtml = '<div class="tt-cat-grid">';
+        MARKET_CATEGORIES.forEach(function(c) {
+            catHtml += '<button class="tt-cat-btn" data-tag="' + c.tag + '">'
+                + '<span class="tt-cat-icon">' + c.icon + '</span>'
+                + '<span class="tt-cat-label">' + c.label + '</span>'
+                + '</button>';
+        });
+        catHtml += '</div>';
 
         content.innerHTML = ''
             + '<div class="tt-top-row">'
@@ -941,12 +968,15 @@
             +       '<button class="tv-sym-btn" data-sym="BINANCE:SOLUSDT">SOL 5m</button>'
             +       '<button class="tv-sym-btn" data-sym="BINANCE:XRPUSDT">XRP 5m</button>'
             +     '</div>'
-            +     '<div class="tt-market-selector" id="ttMarketSelector">'
-            +       '<svg class="tt-market-icon" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'
-            +       '<input type="text" class="tt-market-search" id="ttMarketSearch" placeholder="Поиск рынка Polymarket..." autocomplete="off">'
-            +       '<div class="tt-market-dropdown" id="ttMarketDropdown"></div>'
+            +     '<div class="tt-market-section">'
+            +       '<div class="tt-market-header">Выберите рынок</div>'
+            +       catHtml
+            +       '<div class="tt-events-wrap" id="ttEventsWrap" style="display:none">'
+            +         '<div class="tt-events-header" id="ttEventsHeader"></div>'
+            +         '<div class="tt-events-list" id="ttEventsList"></div>'
+            +       '</div>'
+            +       '<div id="ttSelectedMarket"></div>'
             +     '</div>'
-            +     '<div id="ttSelectedMarket"></div>'
             +   '</div>'
             +   '<div class="tt-panel-col">'
             +     renderTradeTerminal()
@@ -964,95 +994,137 @@
             });
         });
 
-        setupMarketSearch();
+        content.querySelectorAll('.tt-cat-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                content.querySelectorAll('.tt-cat-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                _activeCategory = btn.dataset.tag;
+                loadCategoryEvents(btn.dataset.tag);
+            });
+        });
+
         setupBacktest();
         renderTradeWallets();
         setTimeout(initCopyPanel, 100);
     }
 
-    function setupMarketSearch() {
-        var input = $('ttMarketSearch');
-        var dropdown = $('ttMarketDropdown');
-        if (!input || !dropdown) return;
+    async function loadCategoryEvents(tag) {
+        var wrap = $('ttEventsWrap');
+        var header = $('ttEventsHeader');
+        var list = $('ttEventsList');
+        if (!wrap || !list) return;
 
-        input.addEventListener('focus', function() {
-            if (input.value.trim().length >= 2) fetchMarkets(input.value.trim(), dropdown);
-            else if (!_selectedMarket) fetchMarkets('', dropdown);
-        });
+        wrap.style.display = 'block';
+        header.textContent = 'Загрузка...';
+        list.innerHTML = '';
 
-        input.addEventListener('input', function() {
-            clearTimeout(_marketSearchTimer);
-            var q = input.value.trim();
-            if (q.length < 2 && !_selectedMarket) {
-                fetchMarkets('', dropdown);
-            } else if (q.length >= 2) {
-                _marketSearchTimer = setTimeout(function() { fetchMarkets(q, dropdown); }, 300);
-            }
-        });
-
-        document.addEventListener('click', function(e) {
-            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-                dropdown.classList.remove('open');
-            }
-        });
-    }
-
-    async function fetchMarkets(query, dropdown) {
-        dropdown.innerHTML = '<div class="tt-market-item-loading">Загрузка рынков...</div>';
-        dropdown.classList.add('open');
+        _selectedMarket = null;
+        _selectedEvent = null;
+        var sel = $('ttSelectedMarket');
+        if (sel) sel.innerHTML = '';
 
         try {
-            var url = GAMMA_API + '/markets?closed=false&limit=30&active=true&order=volume24hr&ascending=false';
-            if (query) url = GAMMA_API + '/markets?closed=false&limit=20&active=true&_q=' + encodeURIComponent(query);
-
-            var text = await pageFetch(url);
+            var text = await pageFetch(GAMMA_API + '/events?closed=false&limit=30&tag=' + encodeURIComponent(tag) + '&sort=volume24hr');
             var data = JSON.parse(text);
-            var markets = Array.isArray(data) ? data : [];
+            var events = Array.isArray(data) ? data : [];
 
-            if (markets.length === 0) {
-                dropdown.innerHTML = '<div class="tt-market-item-loading">Рынки не найдены</div>';
+            if (events.length === 0) {
+                header.textContent = 'Нет активных событий';
                 return;
             }
 
-            var html = '';
-            markets.forEach(function(m) {
-                if (!m.question) return;
-                var vol = m.volume ? '$' + fmtNum(m.volume) : '';
-                var outYes = m.outcomes ? JSON.parse(m.outcomes) : ['Yes', 'No'];
-                var prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : [];
-                var yesPrice = prices[0] ? (parseFloat(prices[0]) * 100).toFixed(0) + '¢' : '';
-                var cat = m.groupItemTitle || m.category || '';
+            var cat = MARKET_CATEGORIES.find(function(c) { return c.tag === tag; });
+            header.textContent = (cat ? cat.icon + ' ' + cat.label : tag) + ' — ' + events.length + ' событий';
 
-                html += '<div class="tt-market-item" data-market-id="' + (m.conditionId || m.id || '') + '">'
-                    + '<div class="tt-market-item-title">' + escHtml(m.question) + '</div>'
-                    + '<div class="tt-market-item-meta">'
-                    + (yesPrice ? '<span class="tt-market-item-price">Да ' + yesPrice + '</span>' : '')
+            var html = '';
+            events.forEach(function(ev, idx) {
+                var title = ev.title || ev.question || 'Без названия';
+                var vol = ev.volume ? '$' + fmtNum(ev.volume) : '';
+                var markets = ev.markets || [];
+                var yesPrice = '';
+                if (markets.length > 0 && markets[0].outcomePrices) {
+                    try {
+                        var prices = JSON.parse(markets[0].outcomePrices);
+                        if (prices[0]) yesPrice = (parseFloat(prices[0]) * 100).toFixed(0) + '¢';
+                    } catch(e) {}
+                }
+                var dateStr = ev.endDate ? new Date(ev.endDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '';
+
+                html += '<div class="tt-event-card" data-event-idx="' + idx + '">'
+                    + '<div class="tt-event-title">' + escHtml(title) + '</div>'
+                    + '<div class="tt-event-meta">'
+                    + (yesPrice ? '<span class="tt-event-price">Да ' + yesPrice + '</span>' : '')
                     + (vol ? '<span>' + vol + '</span>' : '')
-                    + (cat ? '<span>' + escHtml(cat) + '</span>' : '')
+                    + (dateStr ? '<span>' + dateStr + '</span>' : '')
+                    + '<span>' + markets.length + ' рынков</span>'
                     + '</div></div>';
             });
 
-            dropdown.innerHTML = html;
+            list.innerHTML = html;
 
-            dropdown.querySelectorAll('.tt-market-item').forEach(function(item) {
-                item.addEventListener('click', function() {
-                    var id = item.dataset.marketId;
-                    var market = markets.find(function(m) { return (m.conditionId || m.id) === id; });
-                    if (market) selectMarket(market);
-                    dropdown.classList.remove('open');
+            list.querySelectorAll('.tt-event-card').forEach(function(card) {
+                card.addEventListener('click', function() {
+                    var idx = parseInt(card.dataset.eventIdx);
+                    selectEvent(events[idx]);
+                    list.querySelectorAll('.tt-event-card').forEach(function(c) { c.classList.remove('selected'); });
+                    card.classList.add('selected');
                 });
             });
         } catch(e) {
-            dropdown.innerHTML = '<div class="tt-market-item-loading">Ошибка загрузки: ' + escHtml(e.message) + '</div>';
+            header.textContent = 'Ошибка: ' + e.message;
         }
+    }
+
+    function selectEvent(ev) {
+        _selectedEvent = ev;
+        var sel = $('ttSelectedMarket');
+        if (!sel) return;
+
+        var markets = ev.markets || [];
+        if (markets.length === 0) {
+            sel.innerHTML = '<div class="mk-trade-card"><div class="mk-trade-header"><div class="mk-trade-title" style="color:var(--text-secondary)">Нет доступных рынков</div></div></div>';
+            return;
+        }
+
+        if (markets.length === 1) {
+            selectMarket(markets[0]);
+            return;
+        }
+
+        var html = '<div class="tt-markets-list">';
+        html += '<div class="tt-markets-list-title">' + escHtml(ev.title || 'Рынки') + '</div>';
+        markets.forEach(function(m) {
+            var question = m.question || m.groupItemTitle || 'Рынок';
+            var prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : [];
+            var yesPrice = prices[0] ? (parseFloat(prices[0]) * 100).toFixed(0) + '¢' : '—';
+            var vol = m.volume ? '$' + fmtNum(m.volume) : '';
+
+            html += '<div class="tt-market-pick" data-cond-id="' + (m.conditionId || m.id || '') + '">'
+                + '<div class="tt-market-pick-left">'
+                +   '<div class="tt-market-pick-q">' + escHtml(question) + '</div>'
+                +   '<div class="tt-market-pick-meta">'
+                +     '<span class="tt-market-pick-price">Да ' + yesPrice + '</span>'
+                +     (vol ? '<span>' + vol + '</span>' : '')
+                +   '</div>'
+                + '</div>'
+                + '<div class="tt-market-pick-arrow">→</div>'
+                + '</div>';
+        });
+        html += '</div>';
+        sel.innerHTML = html;
+
+        sel.querySelectorAll('.tt-market-pick').forEach(function(pick) {
+            pick.addEventListener('click', function() {
+                var cid = pick.dataset.condId;
+                var market = markets.find(function(m) { return (m.conditionId || m.id) === cid; });
+                if (market) selectMarket(market);
+            });
+        });
     }
 
     function selectMarket(market) {
         _selectedMarket = market;
-        var input = $('ttMarketSearch');
-        if (input) input.value = market.question || '';
 
-        var outYes = market.outcomes ? JSON.parse(market.outcomes) : ['Yes', 'No'];
         var prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : [];
         var yesPrice = prices[0] ? parseFloat(prices[0]) : 0;
         var noPrice = prices[1] ? parseFloat(prices[1]) : 0;
@@ -1060,13 +1132,14 @@
         var vol24 = market.volume24hr ? '$' + fmtNum(market.volume24hr) : '—';
         var cat = market.groupItemTitle || market.category || '';
         var endDate = market.endDate ? new Date(market.endDate).toLocaleDateString('ru-RU') : '';
+        var question = market.question || (_selectedEvent ? _selectedEvent.title : '') || '';
 
         var container = $('ttSelectedMarket');
         if (!container) return;
 
         container.innerHTML = '<div class="mk-trade-card">'
             + '<div class="mk-trade-header">'
-            +   '<div class="mk-trade-title">' + escHtml(market.question) + '</div>'
+            +   '<div class="mk-trade-title">' + escHtml(question) + '</div>'
             +   '<div class="mk-trade-meta">'
             +     '<span>Объём: ' + vol + '</span>'
             +     '<span>24ч: ' + vol24 + '</span>'
@@ -1132,7 +1205,7 @@
     }
 
     function executeDemoTrade(side) {
-        if (!_selectedMarket) return;
+        if (!_selectedMarket) { showMsg('Выберите рынок'); return; }
         var amountInput = $('mkTradeAmount');
         var amount = parseFloat(amountInput ? amountInput.value : 0);
         if (!amount || amount <= 0) { showMsg('Введите сумму'); return; }
