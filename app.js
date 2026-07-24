@@ -927,48 +927,56 @@
         _tradeInited = true;
 
         content.innerHTML = ''
-            + '<div class="tv-chart-section"><div class="tv-chart-container" id="tvTradeChart" style="height:320px"></div></div>'
-            + '<div style="padding:12px 0;display:flex;gap:8px;flex-wrap:wrap">'
-            + '<button class="tv-sym-btn" data-sym="BINANCE:BTCUSDT" style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg-2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">BTC 5m</button>'
-            + '<button class="tv-sym-btn" data-sym="BINANCE:ETHUSDT" style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg-2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">ETH 5m</button>'
-            + '<button class="tv-sym-btn" data-sym="BINANCE:SOLUSDT" style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg-2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">SOL 5m</button>'
-            + '<button class="tv-sym-btn" data-sym="BINANCE:XRPUSDT" style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg-2);color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600">XRP 5m</button>'
+            + '<div class="tt-top-row">'
+            +   '<div class="tt-chart-col">'
+            +     '<div class="tv-chart-section"><div class="tv-chart-container" id="tvTradeChart"></div></div>'
+            +     '<div class="tt-sym-bar">'
+            +       '<button class="tv-sym-btn active" data-sym="BINANCE:BTCUSDT">BTC 5m</button>'
+            +       '<button class="tv-sym-btn" data-sym="BINANCE:ETHUSDT">ETH 5m</button>'
+            +       '<button class="tv-sym-btn" data-sym="BINANCE:SOLUSDT">SOL 5m</button>'
+            +       '<button class="tv-sym-btn" data-sym="BINANCE:XRPUSDT">XRP 5m</button>'
+            +     '</div>'
+            +   '</div>'
+            +   '<div class="tt-panel-col">'
+            +     renderTradeTerminal()
+            +   '</div>'
             + '</div>'
-            + renderTradeTerminal();
+            + '<div id="tradeWalletsSection"></div>';
 
         loadTVChart('tvTradeChart', 'BINANCE:BTCUSDT', '5');
 
         content.querySelectorAll('.tv-sym-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
+                content.querySelectorAll('.tv-sym-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
                 loadTVChart('tvTradeChart', btn.dataset.sym, '5');
             });
         });
 
         setupBacktest();
-        setupTradeWallets();
+        renderTradeWallets();
     }
 
     function renderTradeTerminal() {
-        var tariff = getTariff();
-        var html = '<div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px">';
+        var html = '<div class="tt-panel-card">';
 
-        html += '<div style="display:flex;border-bottom:1px solid var(--border)">';
-        html += '<button class="tr-mode-btn active" data-mode="demo" style="flex:1;padding:10px;border:none;background:rgba(76,127,110,0.12);color:var(--accent);font-weight:700;font-size:11px;cursor:pointer;font-family:inherit;text-transform:uppercase;letter-spacing:0.5px">Демо</button>';
-        html += '<button class="tr-mode-btn" data-mode="live" style="flex:1;padding:10px;border:none;background:transparent;color:var(--text-secondary);font-weight:600;font-size:11px;cursor:pointer;font-family:inherit;text-transform:uppercase;letter-spacing:0.5px">Live</button>';
-        html += '<button class="tr-mode-btn" data-mode="copy" style="flex:1;padding:10px;border:none;background:transparent;color:var(--text-secondary);font-weight:600;font-size:11px;cursor:pointer;font-family:inherit;text-transform:uppercase;letter-spacing:0.5px">Copy</button>';
+        html += '<div class="tt-mode-bar">';
+        html += '<button class="tr-mode-btn active" data-mode="demo">Демо</button>';
+        html += '<button class="tr-mode-btn" data-mode="live">Live</button>';
+        html += '<button class="tr-mode-btn" data-mode="copy">Copy</button>';
         html += '</div>';
 
         html += '<div class="tr-panel" id="trDemoPanel">';
-        html += '<div style="padding:16px">';
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
-        html += '<span style="font-size:13px;font-weight:700;color:var(--text)">Демо-счёт</span>';
-        html += '<span style="font-size:18px;font-weight:800;color:var(--accent)" id="demoBalance">$100,000.00</span>';
+        html += '<div style="padding:14px">';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+        html += '<span style="font-size:12px;font-weight:700;color:var(--text)">Демо-счёт</span>';
+        html += '<span style="font-size:16px;font-weight:800;color:var(--accent)" id="demoBalance">$100,000.00</span>';
         html += '</div>';
         html += '<div class="backtest-section"><div class="bt-header"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>Backtest симулятор</div>';
         html += '<div class="bt-body">';
         html += '<div class="bt-input-group"><div class="bt-input-label">Сумма инвестиции</div>';
         html += '<div class="bt-input-row"><div class="bt-input-wrap"><span class="bt-input-prefix">$</span><input type="number" id="btAmount" value="1000" step="100" min="10"></div>';
-        html += '<button class="bt-calc-btn" id="btCalcBtn"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/></svg>Рассчитать</button></div>';
+        html += '<button class="bt-calc-btn" id="btCalcBtn">Рассчитать</button></div>';
         html += '<div class="bt-quick-amounts"><button class="bt-qty-btn" data-v="100">$100</button><button class="bt-qty-btn" data-v="500">$500</button><button class="bt-qty-btn" data-v="1000">$1K</button><button class="bt-qty-btn" data-v="5000">$5K</button><button class="bt-qty-btn" data-v="10000">$10K</button></div>';
         html += '</div>';
         html += '<div class="bt-results" id="btResults" style="display:none"></div>';
@@ -976,34 +984,38 @@
         html += '</div></div>';
 
         html += '<div class="tr-panel" id="trLivePanel" style="display:none">';
-        html += '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:12px">';
-        html += '<p>Live-торговля требует подключения кошелька. Для торговли используйте расширение PolyWin на Polymarket.com</p>';
+        html += '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:11px">';
+        html += '<p>Live-торговля требует подключения кошелька</p>';
         html += '</div></div>';
 
         html += '<div class="tr-panel" id="trCopyPanel" style="display:none">';
-        html += '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:12px">';
-        html += '<p>Копи-трейдинг доступен через расширение PolyWin. Выберите кошелёк для копирования его стратегии.</p>';
+        html += '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:11px">';
+        html += '<p>Копи-трейдинг доступен через расширение PolyWin</p>';
         html += '</div></div>';
 
         html += '</div>';
+        return html;
+    }
 
-        html += '<div style="border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px">';
-        html += '<div style="padding:12px 14px;background:rgba(139,148,158,0.06);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text)">Торговые кошельки</div>';
-        html += '<div style="padding:12px" id="tradeWalletsList">';
+    function renderTradeWallets() {
+        var section = $('tradeWalletsSection');
+        if (!section) return;
         var favs = JSON.parse(localStorage.getItem('polyFavorites') || '[]');
+        var html = '<div class="tt-wallets-card">';
+        html += '<div class="tt-wallets-header">Торговые кошельки</div>';
+        html += '<div id="tradeWalletsList">';
         if (favs.length === 0) {
-            html += '<p style="color:var(--text-secondary);font-size:11px;text-align:center">Нет кошельков. Добавьте из раздела аналитики.</p>';
+            html += '<p style="color:var(--text-secondary);font-size:11px;text-align:center;padding:12px">Нет кошельков. Добавьте из раздела аналитики.</p>';
         } else {
             favs.forEach(function(f) {
-                html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--card-bg-2);border:1px solid var(--border);border-radius:10px;margin-bottom:4px;font-size:11px">'
-                    + '<span style="font-weight:600;color:var(--text);flex:1">' + escHtml(f.name || f.address.substring(0, 10) + '...') + '</span>'
-                    + '<span style="color:var(--text-tertiary);font-size:10px">' + f.address.substring(0, 6) + '...' + f.address.substring(38) + '</span>'
+                html += '<div class="tt-wallet-item">'
+                    + '<span class="tt-wallet-name">' + escHtml(f.name || f.address.substring(0, 10) + '...') + '</span>'
+                    + '<span class="tt-wallet-addr">' + f.address.substring(0, 6) + '...' + f.address.substring(38) + '</span>'
                     + '</div>';
             });
         }
         html += '</div></div>';
-
-        return html;
+        section.innerHTML = html;
     }
 
     function setupBacktest() {
@@ -1060,8 +1072,6 @@
             });
         }, 100);
     }
-
-    function setupTradeWallets() {}
 
     // ====================== FAVORITES / TRACKER ======================
     function initFavoritesTab() {
