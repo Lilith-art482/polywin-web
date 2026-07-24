@@ -1177,7 +1177,8 @@ body.light-theme .tv-chart-section { border-color: #d0d7de; }
 .profile-auth-btn.profile-auth-signup.active,
 .profile-auth-btn.profile-auth-signin.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-#profileSubmitBtn {
+.profile-submit-btn {
+    display: block;
     width: 100%;
     margin-top: 12px;
     padding: 12px;
@@ -1191,8 +1192,8 @@ body.light-theme .tv-chart-section { border-color: #d0d7de; }
     font-family: inherit;
     transition: opacity 0.15s;
 }
-#profileSubmitBtn:hover { opacity: 0.85; }
-#profileSubmitBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.profile-submit-btn:hover { opacity: 0.85; }
+.profile-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ====================== SETTINGS MODAL ====================== */
 .ws-modal-overlay {

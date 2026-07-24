@@ -1250,6 +1250,8 @@
         });
         section.innerHTML = html;
     }
+
+    function setupBacktest() {
         setTimeout(function() {
             var calcBtn = $('btCalcBtn');
             if (!calcBtn) return;
@@ -2526,12 +2528,8 @@
             });
         });
 
-        var submitBtn = document.createElement('button');
-        submitBtn.id = 'profileSubmitBtn';
-        submitBtn.textContent = 'Войти';
-        var authBtns = document.querySelector('#profileAuthForms .profile-auth-btns');
-        if (authBtns) authBtns.after(submitBtn);
-        submitBtn.onclick = doAuth;
+        var submitBtn = $('profileSubmitBtn');
+        if (submitBtn) submitBtn.onclick = doAuth;
 
         setMode(false);
 
