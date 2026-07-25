@@ -26,7 +26,7 @@
     const CORS_PROXY = '/api/proxy?url=';
 
     const POLY_API_PATTERNS = [
-        DATA_API, CLOB_API, GAMMA_API
+        DATA_API, CLOB_API
     ];
 
     // ====================== FIREBASE CONFIG ======================
