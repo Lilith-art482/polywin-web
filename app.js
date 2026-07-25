@@ -934,12 +934,9 @@
         content.innerHTML = ''
             + '<div class="tt-top-row">'
             +   '<div class="tt-chart-col">'
-            +     '<div class="tv-chart-section"><div class="tv-chart-container" id="tvTradeChart"></div></div>'
-            +     '<div class="tt-sym-bar">'
-            +       '<button class="tv-sym-btn active" data-sym="BINANCE:BTCUSDT">BTC 5m</button>'
-            +       '<button class="tv-sym-btn" data-sym="BINANCE:ETHUSDT">ETH 5m</button>'
-            +       '<button class="tv-sym-btn" data-sym="BINANCE:SOLUSDT">SOL 5m</button>'
-            +       '<button class="tv-sym-btn" data-sym="BINANCE:XRPUSDT">XRP 5m</button>'
+            +     '<div class="tv-chart-section" id="ttChartSection" style="display:none">'
+            +       '<div class="tv-chart-container" id="tvTradeChart"></div>'
+            +       '<div class="tt-sym-bar" id="ttSymBar"></div>'
             +     '</div>'
             +     '<div class="tt-market-section">'
             +       '<div class="tt-link-row">'
@@ -959,16 +956,6 @@
             + '</div>'
             + '<div id="tradeWalletsSection"></div>';
 
-        loadTVChart('tvTradeChart', 'BINANCE:BTCUSDT', '5');
-
-        content.querySelectorAll('.tv-sym-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                content.querySelectorAll('.tv-sym-btn').forEach(function(b) { b.classList.remove('active'); });
-                btn.classList.add('active');
-                loadTVChart('tvTradeChart', btn.dataset.sym, '5');
-            });
-        });
-
         var linkInput = $('ttLinkInput');
         var linkBtn = $('ttLinkBtn');
 
@@ -983,6 +970,87 @@
         setupBacktest();
         renderTradeWallets();
         setTimeout(initCopyPanel, 100);
+    }
+
+    var CRYPTO_SYMBOLS = {
+        'bitcoin': 'BINANCE:BTCUSDT',
+        'btc': 'BINANCE:BTCUSDT',
+        'ethereum': 'BINANCE:ETHUSDT',
+        'eth': 'BINANCE:ETHUSDT',
+        'solana': 'BINANCE:SOLUSDT',
+        'sol': 'BINANCE:SOLUSDT',
+        'xrp': 'BINANCE:XRPUSDT',
+        'ripple': 'BINANCE:XRPUSDT',
+        'dogecoin': 'BINANCE:DOGEUSDT',
+        'doge': 'BINANCE:DOGEUSDT',
+        'cardano': 'BINANCE:ADAUSDT',
+        'ada': 'BINANCE:ADAUSDT',
+        'polkadot': 'BINANCE:DOTUSDT',
+        'dot': 'BINANCE:DOTUSDT',
+        'avalanche': 'BINANCE:AVAXUSDT',
+        'avax': 'BINANCE:AVAXUSDT',
+        'matic': 'BINANCE:MATICUSDT',
+        'polygon': 'BINANCE:MATICUSDT',
+        'link': 'BINANCE:LINKUSDT',
+        'chainlink': 'BINANCE:LINKUSDT',
+        'litecoin': 'BINANCE:LTCUSDT',
+        'ltc': 'BINANCE:LTCUSDT',
+        'pepe': 'BINANCE:PEPEUSDT',
+        'shib': 'BINANCE:SHIBUSDT'
+    };
+
+    function detectChartSymbol(ev) {
+        var text = ((ev.title || '') + ' ' + (ev.description || '')).toLowerCase();
+        var markets = ev.markets || [];
+        markets.forEach(function(m) {
+            text += ' ' + ((m.question || '') + ' ' + (m.groupItemTitle || '')).toLowerCase();
+        });
+        var tags = (ev.tags || []).map(function(t) { return (t.slug || t.label || '').toLowerCase(); });
+        text += ' ' + tags.join(' ');
+
+        for (var key in CRYPTO_SYMBOLS) {
+            var re = new RegExp('\\b' + key + '\\b', 'i');
+            if (re.test(text)) return CRYPTO_SYMBOLS[key];
+        }
+        return null;
+    }
+
+    function showChartForEvent(ev) {
+        var section = $('ttChartSection');
+        var bar = $('ttSymBar');
+        if (!section) return;
+
+        var symbol = detectChartSymbol(ev);
+        if (!symbol) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = '';
+        if (bar) {
+            var pairs = [
+                { sym: 'BINANCE:BTCUSDT', label: 'BTC' },
+                { sym: 'BINANCE:ETHUSDT', label: 'ETH' },
+                { sym: 'BINANCE:SOLUSDT', label: 'SOL' },
+                { sym: 'BINANCE:XRPUSDT', label: 'XRP' }
+            ];
+            var html = '';
+            pairs.forEach(function(p) {
+                var active = p.sym === symbol ? ' active' : '';
+                html += '<button class="tv-sym-btn' + active + '" data-sym="' + p.sym + '">' + p.label + ' 5m</button>';
+            });
+            bar.innerHTML = html;
+
+            bar.querySelectorAll('.tv-sym-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    bar.querySelectorAll('.tv-sym-btn').forEach(function(b) { b.classList.remove('active'); });
+                    btn.classList.add('active');
+                    loadTVChart('tvTradeChart', btn.dataset.sym, '5');
+                });
+            });
+        }
+
+        loadTVChart('tvTradeChart', symbol, '5');
     }
 
     function parsePolyUrl(text) {
@@ -1023,6 +1091,9 @@
             }
             var ev = events[0];
             var markets = ev.markets || [];
+
+            _selectedEvent = ev;
+            showChartForEvent(ev);
 
             status.className = 'tt-link-status tt-link-ok';
             status.textContent = '';
