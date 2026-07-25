@@ -1055,7 +1055,7 @@
 
     function parsePolyUrl(text) {
         text = text.trim();
-        var m = text.match(/polymarket\.com\/event\/([a-z0-9\-]+)/i);
+        var m = text.match(/polymarket\.com\/(?:[a-z]{2}\/)?event\/([a-z0-9\-]+)/i);
         if (m) return m[1];
         if (/^[a-z0-9\-]+$/i.test(text) && text.length > 5) return text;
         return null;
