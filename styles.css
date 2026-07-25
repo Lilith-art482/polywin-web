@@ -972,6 +972,15 @@ body.light-theme .tv-chart-section { border-color: #d0d7de; }
     justify-content: space-between;
     margin-bottom: 6px;
 }
+.wh-card-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.wh-name {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
 .wh-addr {
     font-size: 12px;
     font-weight: 700;

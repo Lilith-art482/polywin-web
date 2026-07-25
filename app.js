@@ -1061,11 +1061,8 @@
         var markets = ev.markets || [];
         var condIds = [];
         markets.forEach(function(m) {
-            var cid = m.conditionId || m.clobTokenIds;
-            if (cid) {
-                if (typeof cid === 'string') condIds.push(cid);
-                else if (Array.isArray(cid)) condIds.push.apply(condIds, cid);
-            }
+            var cid = m.conditionId || m.id;
+            if (cid) condIds.push(String(cid));
         });
 
         if (condIds.length === 0) {
@@ -1078,48 +1075,63 @@
             + '<div class="wh-loading">Анализ кошельков...</div>';
 
         try {
-            var holderMap = {};
+            var allHolders = {};
 
             var fetches = condIds.map(function(cid) {
-                return pageFetch(DATA_API + '/holders?condition=' + cid + '&limit=100')
-                    .then(function(text) { return JSON.parse(text); })
+                return pageFetch(DATA_API + '/holders?market=' + cid + '&limit=100')
+                    .then(function(text) {
+                        var data = JSON.parse(text);
+                        var holders = [];
+                        if (Array.isArray(data)) {
+                            data.forEach(function(tokenObj) {
+                                if (tokenObj && Array.isArray(tokenObj.holders)) {
+                                    holders = holders.concat(tokenObj.holders);
+                                }
+                            });
+                        } else if (data && Array.isArray(data.holders)) {
+                            holders = data.holders;
+                        }
+                        return holders;
+                    })
                     .catch(function() { return []; });
             });
             var results = await Promise.all(fetches);
 
-            results.forEach(function(holders, idx) {
-                if (!Array.isArray(holders)) return;
+            results.forEach(function(holders) {
                 holders.forEach(function(h) {
                     var addr = h.proxyWallet || h.address || h.user;
                     if (!addr) return;
-                    var amt = parseFloat(h.current || h.amount || h.size || 0);
-                    if (!holderMap[addr]) holderMap[addr] = { totalAmount: 0, outcomes: [] };
-                    holderMap[addr].totalAmount += amt;
-                    var outName = h.outcome || (h.side === 'Yes' ? 'Да' : h.side === 'No' ? 'Нет' : '—');
+                    var amt = parseFloat(h.amount || h.current || h.size || 0);
+                    if (!allHolders[addr]) allHolders[addr] = { totalAmount: 0, outcomes: [] };
+                    allHolders[addr].totalAmount += amt;
+                    var outIdx = h.outcomeIndex;
+                    var outName = outIdx === 0 ? 'Да' : outIdx === 1 ? 'Нет' : '—';
                     var price = parseFloat(h.averagePrice || h.price || 0);
-                    holderMap[addr].outcomes.push({
+                    var name = h.pseudonym || h.name || '';
+                    allHolders[addr].outcomes.push({
                         outcome: outName,
                         amount: amt,
                         price: price,
-                        condIdx: idx
+                        name: name
                     });
                 });
             });
 
             var whales = [];
-            for (var addr in holderMap) {
-                if (holderMap[addr].totalAmount >= 5000) {
+            for (var addr in allHolders) {
+                if (allHolders[addr].totalAmount >= 1000) {
                     whales.push({
                         address: addr,
                         short: addr.slice(0, 6) + '...' + addr.slice(-4),
-                        totalAmount: holderMap[addr].totalAmount,
-                        outcomes: holderMap[addr].outcomes
+                        totalAmount: allHolders[addr].totalAmount,
+                        outcomes: allHolders[addr].outcomes,
+                        name: allHolders[addr].outcomes[0] ? allHolders[addr].outcomes[0].name : ''
                     });
                 }
             }
 
             whales.sort(function(a, b) { return b.totalAmount - a.totalAmount; });
-            whales = whales.slice(0, 20);
+            whales = whales.slice(0, 30);
 
             if (whales.length === 0) {
                 container.innerHTML = '<div class="wh-section-header"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>Киты на этом событии</div>'
@@ -1133,12 +1145,15 @@
             whales.forEach(function(w) {
                 html += '<div class="wh-card">'
                     + '<div class="wh-card-top">'
-                    +   '<a href="https://polymarket.com/profile/' + w.address + '" target="_blank" class="wh-addr">' + w.short + '</a>'
+                    +   '<div class="wh-card-left">'
+                    +     '<a href="https://polymarket.com/profile/' + w.address + '" target="_blank" class="wh-addr">' + w.short + '</a>'
+                    +     (w.name ? '<span class="wh-name">' + escHtml(w.name) + '</span>' : '')
+                    +   '</div>'
                     +   '<span class="wh-amount">$' + fmtNum(w.totalAmount.toFixed(0)) + '</span>'
                     + '</div>'
                     + '<div class="wh-outcomes">';
                 w.outcomes.forEach(function(o) {
-                    var color = o.outcome === 'Да' || o.outcome === 'Yes' ? 'var(--positive)' : 'var(--negative)';
+                    var color = o.outcome === 'Да' ? 'var(--positive)' : 'var(--negative)';
                     html += '<span class="wh-chip" style="border-color:' + color + ';color:' + color + '">'
                         + escHtml(o.outcome) + ' $' + fmtNum(o.amount.toFixed(0))
                         + (o.price ? ' @' + (o.price * 100).toFixed(0) + '¢' : '')
