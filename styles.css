@@ -927,6 +927,78 @@ body.light-theme .tv-chart-section { border-color: #d0d7de; }
 .tt-link-error { color: var(--negative); }
 .tt-link-ok { color: var(--positive); }
 
+/* ====================== WHALE SECTION ====================== */
+.wh-section {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--card-bg);
+}
+.wh-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    background: var(--card-bg-2);
+}
+.wh-loading, .wh-empty {
+    padding: 20px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.wh-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+.wh-list::-webkit-scrollbar { width: 4px; }
+.wh-list::-webkit-scrollbar-track { background: transparent; }
+.wh-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.wh-card {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+.wh-card:last-child { border-bottom: none; }
+.wh-card:hover { background: var(--hover-bg); }
+.wh-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+.wh-addr {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    text-decoration: none;
+    font-family: 'Courier New', monospace;
+}
+.wh-addr:hover { text-decoration: underline; }
+.wh-amount {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--text);
+}
+.wh-outcomes {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.wh-chip {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border: 1px solid;
+    border-radius: 6px;
+    white-space: nowrap;
+}
+
 .tt-markets-list { padding: 8px 0; }
 .tt-markets-list-title {
     font-size: 11px;

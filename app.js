@@ -26,7 +26,7 @@
     const CORS_PROXY = '/api/proxy?url=';
 
     const POLY_API_PATTERNS = [
-        DATA_API, CLOB_API
+        CLOB_API
     ];
 
     // ====================== FIREBASE CONFIG ======================
@@ -948,6 +948,7 @@
             +       '</div>'
             +       '<div id="ttLinkStatus" class="tt-link-status"></div>'
             +       '<div id="ttSelectedMarket"></div>'
+            +       '<div id="ttWhalesSection" class="wh-section" style="display:none"></div>'
             +     '</div>'
             +   '</div>'
             +   '<div class="tt-panel-col">'
@@ -1053,6 +1054,107 @@
         loadTVChart('tvTradeChart', symbol, '5');
     }
 
+    async function loadEventWhales(ev) {
+        var container = $('ttWhalesSection');
+        if (!container) return;
+
+        var markets = ev.markets || [];
+        var condIds = [];
+        markets.forEach(function(m) {
+            var cid = m.conditionId || m.clobTokenIds;
+            if (cid) {
+                if (typeof cid === 'string') condIds.push(cid);
+                else if (Array.isArray(cid)) condIds.push.apply(condIds, cid);
+            }
+        });
+
+        if (condIds.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        container.innerHTML = '<div class="wh-section-header"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>Киты на этом событии</div>'
+            + '<div class="wh-loading">Анализ кошельков...</div>';
+
+        try {
+            var holderMap = {};
+
+            var fetches = condIds.map(function(cid) {
+                return pageFetch(DATA_API + '/holders?condition=' + cid + '&limit=100')
+                    .then(function(text) { return JSON.parse(text); })
+                    .catch(function() { return []; });
+            });
+            var results = await Promise.all(fetches);
+
+            results.forEach(function(holders, idx) {
+                if (!Array.isArray(holders)) return;
+                holders.forEach(function(h) {
+                    var addr = h.proxyWallet || h.address || h.user;
+                    if (!addr) return;
+                    var amt = parseFloat(h.current || h.amount || h.size || 0);
+                    if (!holderMap[addr]) holderMap[addr] = { totalAmount: 0, outcomes: [] };
+                    holderMap[addr].totalAmount += amt;
+                    var outName = h.outcome || (h.side === 'Yes' ? 'Да' : h.side === 'No' ? 'Нет' : '—');
+                    var price = parseFloat(h.averagePrice || h.price || 0);
+                    holderMap[addr].outcomes.push({
+                        outcome: outName,
+                        amount: amt,
+                        price: price,
+                        condIdx: idx
+                    });
+                });
+            });
+
+            var whales = [];
+            for (var addr in holderMap) {
+                if (holderMap[addr].totalAmount >= 5000) {
+                    whales.push({
+                        address: addr,
+                        short: addr.slice(0, 6) + '...' + addr.slice(-4),
+                        totalAmount: holderMap[addr].totalAmount,
+                        outcomes: holderMap[addr].outcomes
+                    });
+                }
+            }
+
+            whales.sort(function(a, b) { return b.totalAmount - a.totalAmount; });
+            whales = whales.slice(0, 20);
+
+            if (whales.length === 0) {
+                container.innerHTML = '<div class="wh-section-header"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>Киты на этом событии</div>'
+                    + '<div class="wh-empty">Крупных держателей не найдено</div>';
+                return;
+            }
+
+            var html = '<div class="wh-section-header"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>Киты на этом событии — ' + whales.length + '</div>'
+                + '<div class="wh-list">';
+
+            whales.forEach(function(w) {
+                html += '<div class="wh-card">'
+                    + '<div class="wh-card-top">'
+                    +   '<a href="https://polymarket.com/profile/' + w.address + '" target="_blank" class="wh-addr">' + w.short + '</a>'
+                    +   '<span class="wh-amount">$' + fmtNum(w.totalAmount.toFixed(0)) + '</span>'
+                    + '</div>'
+                    + '<div class="wh-outcomes">';
+                w.outcomes.forEach(function(o) {
+                    var color = o.outcome === 'Да' || o.outcome === 'Yes' ? 'var(--positive)' : 'var(--negative)';
+                    html += '<span class="wh-chip" style="border-color:' + color + ';color:' + color + '">'
+                        + escHtml(o.outcome) + ' $' + fmtNum(o.amount.toFixed(0))
+                        + (o.price ? ' @' + (o.price * 100).toFixed(0) + '¢' : '')
+                        + '</span>';
+                });
+                html += '</div></div>';
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        } catch(e) {
+            container.innerHTML = '<div class="wh-section-header"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>Киты на этом событии</div>'
+                + '<div class="wh-empty">Ошибка: ' + escHtml(e.message) + '</div>';
+        }
+    }
+
     function parsePolyUrl(text) {
         text = text.trim();
         var m = text.match(/polymarket\.com\/(?:[a-z]{2}\/)?event\/([a-z0-9\-]+)/i);
@@ -1094,6 +1196,7 @@
 
             _selectedEvent = ev;
             showChartForEvent(ev);
+            loadEventWhales(ev);
 
             status.className = 'tt-link-status tt-link-ok';
             status.textContent = '';
