@@ -1943,38 +1943,39 @@
     function setupBacktest() {
         setTimeout(function() {
             var calcBtn = $('btCalcBtn');
-            if (!calcBtn) return;
-            calcBtn.onclick = function() {
-                var amount = parseFloat($('btAmount')?.value) || 1000;
-                var wr = (40 + Math.random() * 30);
-                var trades = Math.floor(20 + Math.random() * 80);
-                var winTrades = Math.floor(trades * wr / 100);
-                var lossTrades = trades - winTrades;
-                var avgWin = amount * 0.15 * (0.5 + Math.random() * 0.5);
-                var avgLoss = amount * 0.1 * (0.3 + Math.random() * 0.3);
-                var grossPnl = winTrades * avgWin - lossTrades * avgLoss;
-                var netPnl = grossPnl * 0.95;
-                var roi = (netPnl / amount) * 100;
+            if (calcBtn) {
+                calcBtn.onclick = function() {
+                    var amount = parseFloat($('btAmount')?.value) || 1000;
+                    var wr = (40 + Math.random() * 30);
+                    var trades = Math.floor(20 + Math.random() * 80);
+                    var winTrades = Math.floor(trades * wr / 100);
+                    var lossTrades = trades - winTrades;
+                    var avgWin = amount * 0.15 * (0.5 + Math.random() * 0.5);
+                    var avgLoss = amount * 0.1 * (0.3 + Math.random() * 0.3);
+                    var grossPnl = winTrades * avgWin - lossTrades * avgLoss;
+                    var netPnl = grossPnl * 0.95;
+                    var roi = (netPnl / amount) * 100;
 
-                var results = $('btResults');
-                if (!results) return;
-                results.style.display = 'block';
-                results.innerHTML = ''
-                    + '<div class="bt-grid">'
-                    + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Gross P&L</span></div><div class="bt-value ' + (grossPnl >= 0 ? 'positive' : 'negative') + '">' + (grossPnl >= 0 ? '+' : '') + '$' + grossPnl.toFixed(2) + '</div></div>'
-                    + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Net P&L</span><span class="bt-roi ' + (roi >= 0 ? 'positive' : 'negative') + '">' + (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%</span></div><div class="bt-value ' + (netPnl >= 0 ? 'positive' : 'negative') + '">' + (netPnl >= 0 ? '+' : '') + '$' + netPnl.toFixed(2) + '</div></div>'
-                    + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Win Rate</span></div><div class="bt-value positive">' + wr.toFixed(1) + '%</div></div>'
-                    + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Сделок</span></div><div class="bt-value">' + trades + '</div></div>'
-                    + '</div>'
-                    + '<div class="bt-gross"><span class="bt-gross-label">Прибыльных: ' + winTrades + ' / Убыточных: ' + lossTrades + '</span><span class="bt-gross-val ' + (grossPnl >= 0 ? 'positive' : 'negative') + '">ROI ' + (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%</span></div>';
-            };
+                    var results = $('btResults');
+                    if (!results) return;
+                    results.style.display = 'block';
+                    results.innerHTML = ''
+                        + '<div class="bt-grid">'
+                        + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Gross P&L</span></div><div class="bt-value ' + (grossPnl >= 0 ? 'positive' : 'negative') + '">' + (grossPnl >= 0 ? '+' : '') + '$' + grossPnl.toFixed(2) + '</div></div>'
+                        + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Net P&L</span><span class="bt-roi ' + (netPnl >= 0 ? 'positive' : 'negative') + '">' + (netPnl >= 0 ? '+' : '') + roi.toFixed(1) + '%</span></div><div class="bt-value ' + (netPnl >= 0 ? 'positive' : 'negative') + '">' + (netPnl >= 0 ? '+' : '') + '$' + netPnl.toFixed(2) + '</div></div>'
+                        + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Win Rate</span></div><div class="bt-value positive">' + wr.toFixed(1) + '%</div></div>'
+                        + '<div class="bt-card"><div class="bt-card-top"><span class="bt-label">Сделок</span></div><div class="bt-value">' + trades + '</div></div>'
+                        + '</div>'
+                        + '<div class="bt-gross"><span class="bt-gross-label">Прибыльных: ' + winTrades + ' / Убыточных: ' + lossTrades + '</span><span class="bt-gross-val ' + (grossPnl >= 0 ? 'positive' : 'negative') + '">ROI ' + (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%</span></div>';
+                };
 
-            document.querySelectorAll('.bt-qty-btn').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    var input = $('btAmount');
-                    if (input) input.value = btn.dataset.v;
+                document.querySelectorAll('.bt-qty-btn').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var input = $('btAmount');
+                        if (input) input.value = btn.dataset.v;
+                    });
                 });
-            });
+            }
 
             document.querySelectorAll('.tr-mode-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
