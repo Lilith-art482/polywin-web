@@ -1275,99 +1275,76 @@
         _selectedMarket = market;
         if (ev) _selectedEvent = ev;
 
-        var prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : [];
-        var yesPrice = prices[0] ? parseFloat(prices[0]) : 0;
-        var noPrice = prices[1] ? parseFloat(prices[1]) : 0;
-        var vol = market.volume ? '$' + fmtNum(market.volume) : '—';
-        var vol24 = market.volume24hr ? '$' + fmtNum(market.volume24hr) : '—';
-        var endDate = market.endDate ? new Date(market.endDate).toLocaleDateString('ru-RU') : '';
-        var question = market.question || (_selectedEvent ? _selectedEvent.title : '') || '';
-
         var container = $('ttSelectedMarket');
         if (!container) return;
 
-        container.innerHTML = '<div class="mk-trade-card">'
-            + '<div class="mk-trade-header">'
-            +   '<div class="mk-trade-title">' + escHtml(question) + '</div>'
-            +   '<div class="mk-trade-meta">'
-            +     '<span>Объём: ' + vol + '</span>'
-            +     '<span>24ч: ' + vol24 + '</span>'
-            +     (endDate ? '<span>Окончание: ' + endDate + '</span>' : '')
-            +   '</div>'
-            + '</div>'
-            + '<div class="mk-trade-outcomes">'
-            +   '<div class="mk-outcome-row" data-side="Yes" data-price="' + yesPrice + '">'
-            +     '<span class="mk-outcome-name" style="color:var(--positive)">Да</span>'
-            +     '<span class="mk-outcome-price" style="color:var(--positive)">' + (yesPrice * 100).toFixed(0) + '¢</span>'
-            +   '</div>'
-            +   '<div class="mk-outcome-row" data-side="No" data-price="' + noPrice + '">'
-            +     '<span class="mk-outcome-name" style="color:var(--negative)">Нет</span>'
-            +     '<span class="mk-outcome-price" style="color:var(--negative)">' + (noPrice * 100).toFixed(0) + '¢</span>'
-            +   '</div>'
-            + '</div>'
-            + '<div class="mk-trade-actions">'
-            +   '<div class="mk-trade-input-row">'
-            +     '<input type="number" class="mk-trade-amount" id="mkTradeAmount" value="100" min="1" step="10" placeholder="Сумма ($)">'
-            +   '</div>'
-            +   '<div class="mk-trade-input-row">'
-            +     '<button class="mk-trade-btn buy-yes" id="mkBuyYes">Купить Да</button>'
-            +     '<button class="mk-trade-btn buy-no" id="mkBuyNo">Купить Нет</button>'
-            +   '</div>'
-            +   '<div class="mk-trade-potential" id="mkTradePotential"></div>'
-            + '</div>'
-            + '</div>';
+        // Build eventData for React component
+        var prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : [];
+        var yesPrice = prices[0] ? parseFloat(prices[0]) : null;
+        var noPrice = prices[1] ? parseFloat(prices[1]) : null;
 
-        container.querySelectorAll('.mk-outcome-row').forEach(function(row) {
-            row.addEventListener('click', function() {
-                container.querySelectorAll('.mk-outcome-row').forEach(function(r) { r.classList.remove('selected'); });
-                row.classList.add('selected');
-                updateMkPotential();
+        var eventData = {
+            eventId: market.conditionId || market.id || '',
+            question: market.question || (ev ? ev.title : '') || '',
+            outcomes: [
+                { id: 'yes', label: 'Да', price: yesPrice, volume: 0 },
+                { id: 'no', label: 'Нет', price: noPrice, volume: 0 }
+            ],
+            currentUserBalance: _demoBalance,
+            marketType: 'binary',
+            timeRemaining: market.endDate
+                ? calcTimeRemaining(market.endDate)
+                : '',
+            tickSize: 0.01
+        };
+
+        if (window.mountTradingPanel) {
+            container.innerHTML = '';
+            window.mountTradingPanel('ttSelectedMarket', eventData, function(order) {
+                handleReactOrder(order);
             });
-        });
-
-        var amountInput = $('mkTradeAmount');
-        if (amountInput) amountInput.addEventListener('input', updateMkPotential);
-
-        var buyYesBtn = $('mkBuyYes');
-        var buyNoBtn = $('mkBuyNo');
-        if (buyYesBtn) buyYesBtn.addEventListener('click', function() { executeDemoTrade('Yes'); });
-        if (buyNoBtn) buyNoBtn.addEventListener('click', function() { executeDemoTrade('No'); });
-
-        updateDemoBalanceDisplay();
+        }
     }
 
-    function updateMkPotential() {
-        var el = $('mkTradePotential');
-        if (!el || !_selectedMarket) return;
-        var prices = _selectedMarket.outcomePrices ? JSON.parse(_selectedMarket.outcomePrices) : [];
-        var amount = parseFloat(($('mkTradeAmount') || {}).value) || 0;
-        var selected = document.querySelector('.mk-outcome-row.selected');
-        if (!selected || !amount) { el.textContent = ''; return; }
-
-        var side = selected.dataset.side;
-        var price = parseFloat(selected.dataset.price);
-        var shares = amount / price;
-        var profit = shares - amount;
-
-        el.textContent = '≈ ' + shares.toFixed(1) + ' акций • Прибыль: +$' + profit.toFixed(2);
+    function calcTimeRemaining(dateStr) {
+        var diff = new Date(dateStr).getTime() - Date.now();
+        if (diff <= 0) return 'Завершено';
+        var days = Math.floor(diff / 86400000);
+        var hours = Math.floor((diff % 86400000) / 3600000);
+        if (days > 0) return days + ' д. ' + hours + ' ч.';
+        var mins = Math.floor((diff % 3600000) / 60000);
+        return hours + ' ч. ' + mins + ' мин.';
     }
 
-    function executeDemoTrade(side) {
-        if (!_selectedMarket) { showMsg('Выберите рынок'); return; }
-        var amountInput = $('mkTradeAmount');
-        var amount = parseFloat(amountInput ? amountInput.value : 0);
-        if (!amount || amount <= 0) { showMsg('Введите сумму'); return; }
-        if (amount > _demoBalance) { showMsg('Недостаточно средств на демо-счёте'); return; }
+    function handleReactOrder(order) {
+        if (!_selectedMarket) return;
 
         var prices = _selectedMarket.outcomePrices ? JSON.parse(_selectedMarket.outcomePrices) : [];
-        var price = side === 'Yes' ? parseFloat(prices[0] || 0.5) : parseFloat(prices[1] || 0.5);
-        var shares = amount / price;
+        var price;
+        if (order.outcomeId === 'yes') {
+            price = prices[0] ? parseFloat(prices[0]) : 0.5;
+        } else {
+            price = prices[1] ? parseFloat(prices[1]) : 0.5;
+        }
+
+        var amount, shares;
+
+        if (order.type === 'market') {
+            amount = order.amount;
+            shares = amount / price;
+        } else {
+            price = order.price;
+            shares = order.shares;
+            amount = price * shares;
+        }
 
         _demoBalance -= amount;
         var marketId = _selectedMarket.conditionId || _selectedMarket.id;
         if (!_demoPositions[marketId]) _demoPositions[marketId] = { market: _selectedMarket, trades: [] };
         _demoPositions[marketId].trades.push({
-            side: side,
+            side: order.side,
+            outcomeId: order.outcomeId,
+            type: order.type,
             amount: amount,
             price: price,
             shares: shares,
@@ -1378,7 +1355,12 @@
         localStorage.setItem('polyDemoPositions', JSON.stringify(_demoPositions));
 
         updateDemoBalanceDisplay();
-        showMsg('Демо-сделка: ' + side + ' на $' + amount + ' (' + shares.toFixed(1) + ' акций)', true);
+        var label = order.side === 'buy' ? 'Покупка' : 'Продажа';
+        showMsg(label + ': ' + order.outcomeId.toUpperCase() + ' на $' + fmt(amount) + ' (' + shares.toFixed(1) + ' акций)', true);
+    }
+
+    function executeDemoTrade(side) {
+        handleReactOrder({ type: 'market', side: 'buy', outcomeId: side === 'Yes' ? 'yes' : 'no', amount: 100 });
     }
 
     function updateDemoBalanceDisplay() {
