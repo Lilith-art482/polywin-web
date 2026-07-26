@@ -568,41 +568,119 @@
     }
 
     // ====================== TRADINGVIEW CHART ======================
-    function getChartUrl(symbol, interval) {
-        var isLight = document.body.classList.contains('light-theme');
-        var feats = JSON.stringify([
-            'chart','side_toolbar','drawing_tools',
-            'chart_crosshair_menu','chart_multiple_instance',
-            'symbol_search','keep_info_panel_open'
-        ]);
-        return 'https://www.tradingview.com/widgetembed/?symbol=' + encodeURIComponent(symbol)
-            + '&interval=' + interval
-            + '&theme=' + (isLight ? 'light' : 'dark')
-            + '&style=1&locale=ru'
-            + '&hide_side_toolbar=0&symboledit=0&saveimage=0'
-            + '&toolbarbg=' + encodeURIComponent(isLight ? '#f1f3f6' : '#1e222d')
-            + '&timezone=exchange'
-            + '&enabled_features=' + encodeURIComponent(feats);
-    }
+    var _tvChartInstance = null;
+    var _tvCandleSeries = null;
 
-    function reloadTVChart() {
-        document.querySelectorAll('.tv-chart-container').forEach(function(container) {
-            var iframe = container.querySelector('iframe');
-            if (iframe) {
-                var url = new URL(iframe.src);
-                var symbol = url.searchParams.get('symbol') || 'BINANCE:BTCUSDT';
-                var interval = url.searchParams.get('interval') || '5';
-                container.innerHTML = '<iframe src="' + getChartUrl(symbol, interval) + '" style="width:100%;height:100%;border:none;display:block" allowfullscreen="true"></iframe>';
-            }
-        });
-    }
+    var SYMBOL_MAP = {
+        'BINANCE:BTCUSDT': 'BTCUSDT',
+        'BINANCE:ETHUSDT': 'ETHUSDT',
+        'BINANCE:SOLUSDT': 'SOLUSDT',
+        'BINANCE:XRPUSDT': 'XRPUSDT'
+    };
 
-    function loadTVChart(containerId, symbol, interval) {
+    async function loadTVChart(containerId, symbol, interval) {
         symbol = symbol || 'BINANCE:BTCUSDT';
         interval = interval || '5';
         var container = $(containerId);
         if (!container) return;
-        container.innerHTML = '<iframe src="' + getChartUrl(symbol, interval) + '" style="width:100%;height:100%;border:none;display:block" allowfullscreen="true"></iframe>';
+
+        // Destroy old chart
+        if (_tvChartInstance) {
+            _tvChartInstance.remove();
+            _tvChartInstance = null;
+            _tvCandleSeries = null;
+        }
+        container.innerHTML = '';
+
+        if (typeof LightweightCharts === 'undefined') {
+            container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6b7280;font-size:12px">Загрузка графика...</div>';
+            return;
+        }
+
+        var isLight = document.body.classList.contains('light-theme');
+        _tvChartInstance = LightweightCharts.createChart(container, {
+            width: container.clientWidth,
+            height: container.clientHeight || 320,
+            layout: {
+                background: { type: 'solid', color: isLight ? '#ffffff' : '#131722' },
+                textColor: isLight ? '#333' : '#d1d4dc',
+                fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif'
+            },
+            grid: {
+                vertLines: { color: isLight ? '#e1e4e8' : '#1e222d' },
+                horzLines: { color: isLight ? '#e1e4e8' : '#1e222d' }
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            timeScale: { borderColor: isLight ? '#d1d4dc' : '#2a2e39', timeVisible: true, secondsVisible: false },
+            rightPriceScale: { borderColor: isLight ? '#d1d4dc' : '#2a2e39' }
+        });
+
+        _tvCandleSeries = _tvChartInstance.addCandlestickSeries({
+            upColor: '#26a69a',
+            downColor: '#ef5350',
+            borderVisible: false,
+            wickUpColor: '#26a69a',
+            wickDownColor: '#ef5350'
+        });
+
+        // Resize observer
+        var ro = new ResizeObserver(function() {
+            if (_tvChartInstance && container.clientWidth > 0) {
+                _tvChartInstance.applyOptions({ width: container.clientWidth });
+            }
+        });
+        ro.observe(container);
+        container._tvRO = ro;
+
+        // Fetch klines from Binance public API
+        var binanceSym = SYMBOL_MAP[symbol] || 'BTCUSDT';
+        try {
+            var url = 'https://api.binance.com/api/v3/klines?symbol=' + binanceSym + '&interval=' + interval + 'm&limit=500';
+            var resp = await fetch(url);
+            var data = await resp.json();
+            if (Array.isArray(data)) {
+                var candles = data.map(function(k) {
+                    return { time: Math.floor(k[0] / 1000), open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
+                });
+                _tvCandleSeries.setData(candles);
+                _tvChartInstance.timeScale().fitContent();
+            }
+        } catch(e) {
+            container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6b7280;font-size:12px">Ошибка загрузки графика</div>';
+        }
+    }
+
+    function reloadTVChart() {
+        var container = $('tvTradeChart');
+        if (!container) return;
+        var btn = document.querySelector('.tv-sym-btn.active');
+        var sym = btn ? btn.dataset.sym : 'BINANCE:BTCUSDT';
+        loadTVChart('tvTradeChart', sym, '5');
+    }
+
+    // Poll Binance for live updates
+    var _tvPollInterval = null;
+    function _startTvPoll(symbol) {
+        if (_tvPollInterval) clearInterval(_tvPollInterval);
+        if (!_tvCandleSeries) return;
+        var binanceSym = SYMBOL_MAP[symbol] || 'BTCUSDT';
+        _tvPollInterval = setInterval(async function() {
+            if (!_tvCandleSeries) { clearInterval(_tvPollInterval); return; }
+            try {
+                var resp = await fetch('https://api.binance.com/api/v3/klines?symbol=' + binanceSym + '&interval=5m&limit=1');
+                var data = await resp.json();
+                if (data && data[0]) {
+                    var k = data[0];
+                    _tvCandleSeries.update({
+                        time: Math.floor(k[0] / 1000),
+                        open: parseFloat(k[1]),
+                        high: parseFloat(k[2]),
+                        low: parseFloat(k[3]),
+                        close: parseFloat(k[4])
+                    });
+                }
+            } catch(e) {}
+        }, 5000);
     }
 
     // ====================== POLYMARKET API ======================
@@ -1050,11 +1128,13 @@
                     bar.querySelectorAll('.tv-sym-btn').forEach(function(b) { b.classList.remove('active'); });
                     btn.classList.add('active');
                     loadTVChart('tvTradeChart', btn.dataset.sym, '5');
+                    _startTvPoll(btn.dataset.sym);
                 });
             });
         }
 
         loadTVChart('tvTradeChart', symbol, '5');
+        _startTvPoll(symbol);
     }
 
     async function loadEventWhales(ev) {
@@ -1369,6 +1449,111 @@
         html += '<div class="cp-selected" id="cpSelectedInfo" style="display:none"></div>';
         html += '<div class="cp-trades" id="cpTradesList" style="display:none"></div>';
         html += '<div class="cp-log" id="cpLogSection" style="display:none"></div>';
+        html += '</div></div>';
+
+        html += '<div class="tr-panel" id="trStrategiesPanel" style="display:none">';
+        html += '<div class="tr-strat-wrap">';
+        html += '<div class="tr-strategies-tabs">';
+        html += '<button class="tr-strategies-tab active" data-strategy-tab="ai">AI Agent</button>';
+        html += '<button class="tr-strategies-tab" data-strategy-tab="my">Мои стратегии</button>';
+        html += '</div>';
+
+        html += '<div id="trStrategiesTabAI">';
+        html += '<div class="tr-strat-agent">';
+        html += '<div class="tr-strat-agent-hdr">';
+        html += '<div class="tr-strat-agent-title"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg><span>AI Agent</span></div>';
+        html += '<button class="tr-bot-start-btn" id="trBotStartBtn">&#9654;</button>';
+        html += '</div>';
+
+        html += '<div class="tr-strat-selector">';
+        html += '<div class="tr-strat-opt active" data-strategy="clob"><span>CLOB Arbitrage</span></div>';
+        html += '<div class="tr-strat-opt" data-strategy="delta"><span>Delta Mesh</span><span class="tr-strat-badge">В разработке</span></div>';
+        html += '<div class="tr-strat-opt" data-strategy="phoenix"><span>Phoenix</span></div>';
+        html += '</div>';
+
+        html += '<div id="trBotClobContent">';
+        html += '<div class="tr-strat-assets"><div class="tr-strat-assets-label">Assets</div><div class="tr-strat-assets-btns" id="trBotAssetBtns">';
+        html += '<button class="tr-strat-asset-btn active" data-asset="BTC"><span class="tr-strat-asset-icon">&#491;</span>BTC</button>';
+        html += '<button class="tr-strat-asset-btn active" data-asset="ETH"><span class="tr-strat-asset-icon">&#10224;</span>ETH</button>';
+        html += '<button class="tr-strat-asset-btn active" data-asset="SOL"><span class="tr-strat-asset-icon">&#9675;</span>SOL</button>';
+        html += '</div></div>';
+
+        html += '<div class="tr-strat-settings">';
+        html += '<div class="tr-strat-setting"><label>Balance $</label><input id="trBotBalInput" type="number" value="100000" min="1"></div>';
+        html += '<div class="tr-strat-setting"><label>Min Spread</label><div class="tr-strat-setting-input"><input id="trClobMinSpread" type="number" value="2" min="1" max="20" step="0.5"><span>¢</span></div></div>';
+        html += '<div class="tr-strat-setting"><label>Rebate</label><div class="tr-strat-setting-input"><input id="trClobRebate" type="number" value="20" min="0" max="100"><span>%</span></div></div>';
+        html += '<div class="tr-strat-setting"><label>Order Size</label><div class="tr-strat-setting-input"><span>$</span><input id="trClobOrderSize" type="number" value="100" min="1"></div></div>';
+        html += '<div class="tr-strat-setting"><label>Timeout</label><div class="tr-strat-setting-input"><input id="trClobTimeout" type="number" value="3" min="1" max="30"><span>sec</span></div></div>';
+        html += '<div class="tr-strat-setting"><label>Gas $</label><input id="trClobGasCost" type="number" value="0.02" min="0" max="1" step="0.005"></div>';
+        html += '</div>';
+
+        html += '<div class="tr-strat-stats" id="trBotStats">';
+        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Сделок</span><span class="tr-strat-stat-val" id="trBotStatTrades">0</span></div>';
+        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Винрейт</span><span class="tr-strat-stat-val" id="trBotStatWinrate">0%</span></div>';
+        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">PnL</span><span class="tr-strat-stat-val" id="trBotStatPnl">$0.00</span></div>';
+        html += '</div>';
+
+        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr"><span>Позиции (<span id="trBotPosCount">0</span>)</span></div>';
+        html += '<div class="tr-strat-positions" id="trBotPositions"><div class="tr-strat-empty">Нет открытых позиций</div></div></div>';
+
+        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr"><span>Раунды</span>';
+        html += '<button class="tr-strat-section-btn" id="trBotRoundsClear" style="display:none">Очистить</button></div>';
+        html += '<div class="tr-strat-rounds" id="trBotRounds"><div class="tr-strat-empty">Нет завершённых раундов</div></div></div>';
+
+        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr tr-strat-collap" id="trBotHistToggle"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg><span>История</span></div>';
+        html += '<div class="tr-strat-collap-body" id="trBotHistBody" style="display:none">';
+        html += '<div class="tr-strat-hist-filters">';
+        html += '<button class="tr-strat-hist-filter active" data-filter="all">All</button>';
+        html += '<button class="tr-strat-hist-filter" data-filter="BTC">BTC</button>';
+        html += '<button class="tr-strat-hist-filter" data-filter="ETH">ETH</button>';
+        html += '<button class="tr-strat-hist-filter" data-filter="SOL">SOL</button>';
+        html += '</div>';
+        html += '<div class="tr-strat-log" id="trBotLog"><div class="tr-strat-empty">Нет операций</div></div>';
+        html += '</div></div>';
+        html += '</div>';
+
+        html += '<div id="trBotDeltaContent" style="display:none">';
+        html += '<div class="tr-strat-dev"><div class="tr-strat-dev-icon">&#9881;</div>';
+        html += '<div class="tr-strat-dev-title">В разработке</div>';
+        html += '<div class="tr-strat-dev-desc">Delta Mesh стратегия находится в разработке</div></div></div>';
+
+        html += '<div id="trBotPhoenixContent" style="display:none">';
+        html += '<div class="tr-strat-assets"><div class="tr-strat-assets-label">Assets</div><div class="tr-strat-assets-btns" id="phxAssetBtns">';
+        html += '<button class="tr-strat-asset-btn active" data-asset="BTC"><span class="tr-strat-asset-icon">&#491;</span>BTC</button>';
+        html += '<button class="tr-strat-asset-btn active" data-asset="ETH"><span class="tr-strat-asset-icon">&#10224;</span>ETH</button>';
+        html += '<button class="tr-strat-asset-btn active" data-asset="SOL"><span class="tr-strat-asset-icon">&#9675;</span>SOL</button>';
+        html += '</div></div>';
+        html += '<div class="tr-strat-settings">';
+        html += '<div class="tr-strat-setting"><label>Balance $</label><input id="phxBalInput" type="number" value="1000" min="1"></div>';
+        html += '<div class="tr-strat-setting"><label>Entry</label><div class="tr-strat-setting-input"><input id="phxEntryCents" type="number" value="2" min="1" max="10"><span>¢</span></div></div>';
+        html += '<div class="tr-strat-setting"><label>Target</label><div class="tr-strat-setting-input"><input id="phxTargetCents" type="number" value="20" min="5" max="50"><span>¢</span></div></div>';
+        html += '</div>';
+        html += '<div class="tr-strat-settings">';
+        html += '<div class="tr-strat-setting"><label>Budget</label>';
+        html += '<select id="phxBudgetMode" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:10px;width:100%;outline:none">';
+        html += '<option value="pct">% от баланса</option><option value="fixed">$ фикс</option></select></div>';
+        html += '<div class="tr-strat-setting"><label>Бюджет %</label><input id="phxBudgetPct" type="number" value="5" min="1" max="100"></div>';
+        html += '<div class="tr-strat-setting"><label>Бюджет $</label><input id="phxBudgetFixed" type="number" value="15" min="0.5" step="0.5" style="display:none"></div>';
+        html += '</div>';
+        html += '<div class="tr-strat-settings"><div class="tr-strat-setting" style="flex-direction:row;gap:8px;align-items:center">';
+        html += '<label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="checkbox" id="phxStopEnabled"> Stop Loss</label>';
+        html += '<input id="phxStopPct" type="number" value="30" min="1" max="99" style="width:50px;padding:4px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none">';
+        html += '<span style="font-size:9px;color:var(--text-tertiary)">% от fill</span></div></div>';
+        html += '<div class="tr-strat-stats">';
+        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Сделок</span><span class="tr-strat-stat-val" id="phxStatTrades">0</span></div>';
+        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Винрейт</span><span class="tr-strat-stat-val" id="phxStatWinrate">0%</span></div>';
+        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">PnL</span><span class="tr-strat-stat-val" id="phxStatPnl">$0.00</span></div>';
+        html += '</div>';
+        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr"><span>Раунды</span>';
+        html += '<button class="tr-strat-section-btn" id="phxRoundsClear">Очистить</button></div>';
+        html += '<div class="tr-strat-rounds" id="phxRounds"><div class="tr-strat-empty">Нет завершённых раундов</div></div></div>';
+        html += '</div>';
+        html += '</div>';
+
+        html += '<div id="trStrategiesTabMy" style="display:none">';
+        html += '<div class="tr-strat-empty" style="padding:40px 20px;text-align:center;font-size:11px;color:var(--text-tertiary)">Скоро</div>';
+        html += '</div>';
+
         html += '</div></div>';
 
         html += '</div>';
@@ -1699,16 +1884,645 @@
                         b.classList.remove('active');
                     });
                     btn.classList.add('active');
-                    ['trDemoPanel','trLivePanel','trCopyPanel'].forEach(function(id) {
+                    ['trDemoPanel','trLivePanel','trCopyPanel','trStrategiesPanel'].forEach(function(id) {
                         var el = $(id);
                         if (el) el.style.display = 'none';
                     });
                     var panel = $('tr' + btn.dataset.mode.charAt(0).toUpperCase() + btn.dataset.mode.slice(1) + 'Panel');
                     if (panel) panel.style.display = 'block';
                     if (btn.dataset.mode === 'copy') initCopyPanel();
+                    if (btn.dataset.mode === 'strategies') initStrategiesPanel();
                 });
             });
         }, 100);
+    }
+
+    // ====================== STRATEGY BOTS ======================
+    var _stratInited = false;
+    var _tradeStrategy = 'clob';
+    var _clobBot = null;
+    var _phxBot = null;
+    var _clobInterval = null;
+    var _phxInterval = null;
+
+    function _clobDefault() {
+        return {
+            running: false, balance: 100000, startBalance: 100000,
+            totalPnl: 0, totalTrades: 0, wins: 0, losses: 0,
+            positions: {}, rounds: [], roundCounter: 0,
+            startTime: null, logs: [],
+            minSpread: 2, rebate: 20, orderSize: 100, timeout: 3, gasCost: 0.02,
+            selectedAssets: ['BTC', 'ETH', 'SOL']
+        };
+    }
+
+    function _phxDefault() {
+        return {
+            running: false, balance: 1000, startBalance: 1000,
+            totalPnl: 0, totalTrades: 0, wins: 0, losses: 0,
+            positions: {}, rounds: [], roundCounter: 0,
+            startTime: null, logs: [],
+            entryCents: 2, targetCents: 20,
+            budgetMode: 'pct', budgetPct: 5, budgetFixed: 15,
+            stopEnabled: false, stopPct: 30,
+            selectedAssets: ['BTC', 'ETH', 'SOL']
+        };
+    }
+
+    function _getClobBot() {
+        if (!_clobBot) {
+            try {
+                var saved = JSON.parse(localStorage.getItem('polyClobBotState'));
+                if (saved) { _clobBot = _clobDefault(); for (var k in saved) if (k !== 'running' && k !== 'startTime') _clobBot[k] = saved[k]; }
+                else _clobBot = _clobDefault();
+            } catch(e) { _clobBot = _clobDefault(); }
+        }
+        return _clobBot;
+    }
+
+    function _getPhxBot() {
+        if (!_phxBot) {
+            try {
+                var saved = JSON.parse(localStorage.getItem('polyPhxBotState'));
+                if (saved) { _phxBot = _phxDefault(); for (var k in saved) if (k !== 'running' && k !== 'startTime') _phxBot[k] = saved[k]; }
+                else _phxBot = _phxDefault();
+            } catch(e) { _phxBot = _phxDefault(); }
+        }
+        return _phxBot;
+    }
+
+    function _saveClobBot() { try { localStorage.setItem('polyClobBotState', JSON.stringify(_getClobBot())); } catch(e) {} }
+    function _savePhxBot() { try { localStorage.setItem('polyPhxBotState', JSON.stringify(_getPhxBot())); } catch(e) {} }
+
+    function _botLog(b, msg) {
+        var entry = { time: Date.now(), msg: msg };
+        b.logs.push(entry);
+        if (b.logs.length > 200) b.logs.shift();
+        _botRenderLog(b);
+    }
+
+    function _botPushRound(b, round) {
+        b.rounds.push(round);
+        if (b.rounds.length > 100) b.rounds.shift();
+        _botRenderRounds(b);
+    }
+
+    // === CLOB Bot Tick (demo simulation) ===
+    // === CLOB Bot Tick (real API) ===
+    var _clobPriceCache = {};  // { tokenId: { bid, ask, time } }
+    var _clobActiveMarkets = []; // [{ conditionId, slug, tokenIds, symbol }]
+
+    async function _clobDiscoverMarkets() {
+        var b = _getClobBot();
+        var assets = b.selectedAssets || ['BTC', 'ETH', 'SOL'];
+        var now = Math.floor(Date.now() / 1000);
+        var ws = Math.floor(now / 300) * 300;
+        var slugs = [];
+        assets.forEach(function(a) {
+            var s = a.toLowerCase();
+            slugs.push(s + '-updown-5m-' + ws);
+            slugs.push(s + '-updown-5m-' + (ws + 300));
+        });
+
+        var markets = [];
+        for (var i = 0; i < slugs.length; i++) {
+            try {
+                var text = await pageFetch(GAMMA_API + '/events?slug=' + encodeURIComponent(slugs[i]));
+                var evArr = JSON.parse(text);
+                if (evArr && evArr.length > 0 && evArr[0].markets) {
+                    evArr[0].markets.forEach(function(m) {
+                        if (m.closed || m.resolved) return;
+                        var tokenIds = null;
+                        if (m.clobTokenIds) {
+                            try { tokenIds = JSON.parse(m.clobTokenIds); } catch(e) {}
+                        }
+                        if (!tokenIds || tokenIds.length < 2) return;
+                        var sym = slugs[i].split('-')[0].toUpperCase();
+                        markets.push({ conditionId: m.conditionId, slug: m.slug, tokenIds: tokenIds, symbol: sym });
+                    });
+                }
+            } catch(e) {}
+        }
+        _clobActiveMarkets = markets;
+    }
+
+    async function _clobFetchOrderBooks() {
+        for (var i = 0; i < _clobActiveMarkets.length; i++) {
+            var m = _clobActiveMarkets[i];
+            for (var ti = 0; ti < m.tokenIds.length; ti++) {
+                var tokenId = m.tokenIds[ti];
+                try {
+                    var text = await pageFetch(CLOB_API + '/order-book/' + tokenId);
+                    var book = JSON.parse(text);
+                    var bids = book.bids || [];
+                    var asks = book.asks || [];
+                    var bestBid = bids.length > 0 ? parseFloat(bids[0].price) : null;
+                    var bestAsk = asks.length > 0 ? parseFloat(asks[0].price) : null;
+                    _clobPriceCache[tokenId] = { bid: bestBid, ask: bestAsk, time: Date.now() };
+                } catch(e) {}
+            }
+        }
+    }
+
+    async function _clobTick() {
+        var b = _getClobBot();
+        if (!b.running) return;
+        var now = Date.now();
+
+        // Discover markets every 30s
+        if (!b._lastDiscovery || (now - b._lastDiscovery) > 30000) {
+            b._lastDiscovery = now;
+            await _clobDiscoverMarkets();
+        }
+
+        // Fetch order books every 3s
+        if (!b._lastBookFetch || (now - b._lastBookFetch) > 3000) {
+            b._lastBookFetch = now;
+            await _clobFetchOrderBooks();
+        }
+
+        // Check fills for pending positions
+        for (var cid in b.positions) {
+            var p = b.positions[cid];
+            if (p.status === 'pending') {
+                // Check if price moved to our level
+                var cached = _clobPriceCache[p.tokenId];
+                if (cached) {
+                    var filled = false;
+                    if (p.side === 'BUY' && cached.ask != null && cached.ask <= p.price) filled = true;
+                    if (p.side === 'SELL' && cached.bid != null && cached.bid >= p.price) filled = true;
+                    if (!filled && (now - p.createdAt > (b.timeout || 3) * 1000)) filled = true; // timeout fill
+                    if (filled) {
+                        p.status = 'filled'; p.fillTime = now;
+                        _botLog(b, 'FILL: ' + p.sym + ' ' + p.side + ' ' + p.shares + ' @ $' + p.price.toFixed(3));
+                    }
+                }
+            } else if (p.status === 'filled') {
+                // Check if we can close (sell for BUY, buy for SELL)
+                var cached2 = _clobPriceCache[p.tokenId];
+                if (cached2) {
+                    var closePrice = null;
+                    if (p.side === 'BUY' && cached2.bid != null) closePrice = cached2.bid;
+                    if (p.side === 'SELL' && cached2.ask != null) closePrice = cached2.ask;
+                    if (closePrice != null) {
+                        var pnl = p.side === 'BUY'
+                            ? (closePrice - p.price) * p.shares - (b.gasCost || 0.02)
+                            : (p.price - closePrice) * p.shares - (b.gasCost || 0.02);
+                        b.balance += p.shares * (p.side === 'BUY' ? closePrice : (1 - closePrice));
+                        b.totalPnl += pnl;
+                        b.totalTrades++;
+                        if (pnl >= 0) b.wins++; else b.losses++;
+                        _botPushRound(b, { num: ++b.roundCounter, sym: p.sym, side: p.side, entry: p.price, exit: closePrice, shares: p.shares, pnl: pnl, time: now });
+                        _botLog(b, 'CLOSE: ' + p.sym + ' ' + (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2));
+                        delete b.positions[cid];
+                    }
+                }
+            }
+        }
+
+        // Open new market making orders on real markets
+        var posCount = Object.keys(b.positions).length;
+        for (var mi = 0; mi < _clobActiveMarkets.length && posCount < 5; mi++) {
+            var mkt = _clobActiveMarkets[mi];
+            if (b.selectedAssets.indexOf(mkt.symbol) < 0) continue;
+
+            var yesTokenId = mkt.tokenIds[0];
+            var cached3 = _clobPriceCache[yesTokenId];
+            if (!cached3 || cached3.bid == null || cached3.ask == null) continue;
+            if ((now - cached3.time) > 10000) continue; // stale
+
+            var spread = cached3.ask - cached3.bid;
+            if (spread > 0.50 || spread <= 0) continue; // resolved market
+            if (cached3.bid < 0.03 || cached3.ask > 0.97) continue;
+
+            // Check if we already have position on this condition
+            var hasPos = false;
+            for (var pk in b.positions) {
+                if (b.positions[pk].conditionId === mkt.conditionId) { hasPos = true; break; }
+            }
+            if (hasPos) continue;
+
+            // Market making: BUY at bid
+            var spreadCents = spread * 100;
+            if (spreadCents >= b.minSpread) {
+                var contracts = Math.floor(b.orderSize / (cached3.bid || 0.01));
+                if (contracts < 1) contracts = 1;
+                var cost = contracts * cached3.bid;
+                if (b.balance >= cost) {
+                    b.balance -= cost;
+                    var key = mkt.symbol + '_' + mkt.conditionId.substring(0, 8) + '_' + Date.now();
+                    b.positions[key] = {
+                        sym: mkt.symbol, side: 'BUY', price: cached3.bid, shares: contracts,
+                        status: 'pending', createdAt: now, conditionId: mkt.conditionId, tokenId: yesTokenId
+                    };
+                    posCount++;
+                    _botLog(b, 'MM BUY: ' + mkt.symbol + ' ' + contracts + ' @ $' + cached3.bid.toFixed(3) + ' (spread ' + spreadCents.toFixed(1) + '¢)');
+                }
+            }
+        }
+
+        _saveClobBot();
+        _stratRenderStats();
+    }
+
+    // === Phoenix Bot Tick (real API) ===
+    var _phxPriceCache = {}; // { conditionId: { upPrice, dnPrice, time, endTime, slug } }
+
+    async function _phxDiscoverMarkets() {
+        var b = _getPhxBot();
+        var assets = b.selectedAssets || ['BTC', 'ETH', 'SOL'];
+        var now = Math.floor(Date.now() / 1000);
+        var ws = Math.floor(now / 300) * 300;
+        var slugs = [];
+        assets.forEach(function(a) {
+            var s = a.toLowerCase();
+            for (var offset = 0; offset <= 600; offset += 300) {
+                slugs.push(s + '-updown-5m-' + (ws + offset));
+            }
+        });
+
+        for (var i = 0; i < slugs.length; i++) {
+            try {
+                var text = await pageFetch(GAMMA_API + '/events?slug=' + encodeURIComponent(slugs[i]));
+                var evArr = JSON.parse(text);
+                if (!evArr || !evArr.length || !evArr[0].markets) continue;
+                evArr[0].markets.forEach(function(m) {
+                    if (m.closed || m.resolved || !m.conditionId) return;
+                    var prices = null;
+                    if (m.outcomePrices) {
+                        try { prices = JSON.parse(m.outcomePrices); } catch(e) {}
+                    }
+                    if (!prices || prices.length < 2) return;
+                    var upPrice = parseFloat(prices[0]);
+                    var dnPrice = parseFloat(prices[1]);
+                    if (isNaN(upPrice) || isNaN(dnPrice)) return;
+
+                    var endTime = 0;
+                    if (m.endDate) endTime = new Date(m.endDate).getTime();
+                    if (!endTime && m.slug) {
+                        try { var ts = parseInt(m.slug.split('-').pop(), 10) * 1000; if (ts > 0) endTime = ts; } catch(e) {}
+                    }
+
+                    _phxPriceCache[m.conditionId] = {
+                        upPrice: upPrice, dnPrice: dnPrice, time: Date.now(),
+                        endTime: endTime, slug: m.slug, sym: slugs[i].split('-')[0].toUpperCase()
+                    };
+                });
+            } catch(e) {}
+        }
+    }
+
+    async function _phxTick() {
+        var b = _getPhxBot();
+        if (!b.running) return;
+        var now = Date.now();
+
+        // Discover markets every 15s
+        if (!b._lastDiscovery || (now - b._lastDiscovery) > 15000) {
+            b._lastDiscovery = now;
+            await _phxDiscoverMarkets();
+        }
+
+        // Resolve expired positions
+        for (var cid in b.positions) {
+            var p = b.positions[cid];
+            if (p.windowEnd && now >= p.windowEnd) {
+                if (p.filled) {
+                    var pnl = -(p.spent || 0);
+                    b.totalTrades++; b.losses++; b.totalPnl += pnl;
+                    _botPushRound(b, { num: p.num, sym: p.sym, entry: p.fillPrice, exit: 0, pnl: pnl, reason: 'Expired', time: now });
+                    _botLog(b, 'EXPIRED: ' + p.sym + ' -$' + Math.abs(pnl).toFixed(2));
+                }
+                delete b.positions[cid];
+                continue;
+            }
+
+            // Check real prices for filled positions
+            if (p.filled) {
+                var cached = _phxPriceCache[p.conditionId];
+                if (!cached) continue;
+                var curPrice = p.side === 'Up' ? cached.upPrice : cached.dnPrice;
+
+                // Target hit
+                if (curPrice >= b.targetCents / 100) {
+                    var payout = p.shares * curPrice;
+                    var pnlT = payout - p.spent;
+                    b.balance += payout; b.totalPnl += pnlT; b.totalTrades++;
+                    if (pnlT >= 0) b.wins++; else b.losses++;
+                    _botPushRound(b, { num: p.num, sym: p.sym, entry: p.fillPrice, exit: curPrice, pnl: pnlT, reason: 'Target', time: now });
+                    _botLog(b, 'TARGET: ' + p.sym + ' ' + p.side + ' ' + (curPrice * 100).toFixed(1) + '¢ → +$' + pnlT.toFixed(2));
+                    delete b.positions[cid];
+                }
+                // Stop loss
+                else if (b.stopEnabled && curPrice < p.fillPrice * (b.stopPct / 100)) {
+                    var payoutS = p.shares * curPrice;
+                    var pnlS = payoutS - p.spent;
+                    b.balance += payoutS; b.totalPnl += pnlS; b.totalTrades++;
+                    if (pnlS >= 0) b.wins++; else b.losses++;
+                    _botPushRound(b, { num: p.num, sym: p.sym, entry: p.fillPrice, exit: curPrice, pnl: pnlS, reason: 'Stop', time: now });
+                    _botLog(b, 'STOP: ' + p.sym + ' ' + p.side + ' ' + (curPrice * 100).toFixed(1) + '¢ → -$' + Math.abs(pnlS).toFixed(2));
+                    delete b.positions[cid];
+                }
+            }
+        }
+
+        // Open new positions on real markets
+        var symCount = 0;
+        for (var pid in b.positions) symCount++;
+        if (symCount >= 3) { _savePhxBot(); _stratRenderStats(); return; }
+
+        for (var condId in _phxPriceCache) {
+            if (symCount >= 3) break;
+            var cached2 = _phxPriceCache[condId];
+            if ((now - cached2.time) > 20000) continue; // stale
+            if (!cached2.endTime || cached2.endTime < now) continue; // expired
+            if (cached2.endTime - now <= 30000) continue; // too close to expiry
+            if (cached2.endTime - now > 360000) continue; // too far
+
+            var sym = cached2.sym;
+            if (b.selectedAssets.indexOf(sym) < 0) continue;
+
+            // Check if we already have position on this condition
+            var hasPos2 = false;
+            for (var pk in b.positions) {
+                if (b.positions[pk].conditionId === condId) { hasPos2 = true; break; }
+            }
+            if (hasPos2) continue;
+
+            var minPrice = Math.min(cached2.upPrice, cached2.dnPrice);
+            var entryLevel = b.entryCents / 100;
+            if (minPrice > entryLevel * 1.5) continue; // too expensive
+
+            var budget;
+            if (b.budgetMode === 'fixed') budget = Math.min(b.budgetFixed || 15, b.balance);
+            else { budget = b.balance * ((b.budgetPct || 5) / 100); budget = Math.min(budget, 15); }
+            if (budget < 0.5 || b.balance < budget) continue;
+
+            // Place pending order — will fill if price drops to entry level
+            var newCid = condId + '_' + Date.now();
+            b.positions[newCid] = {
+                sym: sym, num: ++b.roundCounter, conditionId: condId,
+                filled: false, side: null, fillPrice: 0,
+                shares: 0, halfBudget: budget, spent: 0,
+                windowEnd: cached2.endTime + 300000, resolved: false
+            };
+            _botLog(b, 'ORDER: ' + sym + ' entry=' + (entryLevel * 100).toFixed(0) + '¢ min=' + (minPrice * 100).toFixed(1) + '¢');
+
+            // Check if current price already at entry level → instant fill
+            if (minPrice <= entryLevel * 1.03) {
+                var pp = b.positions[newCid];
+                pp.filled = true;
+                pp.side = cached2.upPrice < cached2.dnPrice ? 'Up' : 'Dn';
+                pp.fillPrice = minPrice;
+                pp.shares = pp.halfBudget / pp.fillPrice;
+                pp.spent = Math.min(pp.halfBudget, b.balance);
+                b.balance -= pp.spent;
+                _botLog(b, 'FILL: ' + sym + ' ' + pp.side + ' @ ' + (pp.fillPrice * 100).toFixed(1) + '¢');
+            }
+            symCount++;
+        }
+
+        _savePhxBot();
+        _stratRenderStats();
+    }
+
+    function _stratRenderStats() {
+        var b = _getClobBot();
+        var el = function(id) { return $(id); };
+        var e;
+        e = el('trBotStatTrades'); if (e) e.textContent = b.totalTrades;
+        e = el('trBotStatWinrate'); if (e) e.textContent = b.totalTrades > 0 ? Math.round(b.wins / b.totalTrades * 100) + '%' : '0%';
+        e = el('trBotStatPnl'); if (e) { e.textContent = '$' + b.totalPnl.toFixed(2); e.style.color = b.totalPnl >= 0 ? 'var(--green)' : 'var(--red)'; }
+        e = el('trBotPosCount'); if (e) e.textContent = Object.keys(b.positions).length;
+
+        var pb = _getPhxBot();
+        e = el('phxStatTrades'); if (e) e.textContent = pb.totalTrades;
+        e = el('phxStatWinrate'); if (e) e.textContent = pb.totalTrades > 0 ? Math.round(pb.wins / pb.totalTrades * 100) + '%' : '0%';
+        e = el('phxStatPnl'); if (e) { e.textContent = '$' + pb.totalPnl.toFixed(2); e.style.color = pb.totalPnl >= 0 ? 'var(--green)' : 'var(--red)'; }
+    }
+
+    function _botRenderLog(b) {
+        var el = $('trBotLog');
+        if (!el) return;
+        if (!b.logs || b.logs.length === 0) { el.innerHTML = '<div class="tr-strat-empty">Нет операций</div>'; return; }
+        var html = '';
+        for (var i = b.logs.length - 1; i >= 0 && i >= b.logs.length - 50; i--) {
+            var l = b.logs[i];
+            var t = new Date(l.time);
+            var ts = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0') + ':' + t.getSeconds().toString().padStart(2,'0');
+            var cls = l.msg.indexOf('+$') >= 0 || l.msg.indexOf('TARGET') >= 0 ? 'positive' : (l.msg.indexOf('-$') >= 0 || l.msg.indexOf('STOP') >= 0 || l.msg.indexOf('EXPIRED') >= 0 ? 'negative' : '');
+            html += '<div class="tr-strat-log-entry ' + cls + '"><span class="tr-strat-log-time">' + ts + '</span><span class="tr-strat-log-msg">' + escHtml(l.msg) + '</span></div>';
+        }
+        el.innerHTML = html;
+    }
+
+    function _botRenderRounds(b) {
+        var el = b === _getClobBot() ? $('trBotRounds') : $('phxRounds');
+        var clearBtn = b === _getClobBot() ? $('trBotRoundsClear') : $('phxRoundsClear');
+        if (!el) return;
+        if (!b.rounds || b.rounds.length === 0) { el.innerHTML = '<div class="tr-strat-empty">Нет завершённых раундов</div>'; if (clearBtn) clearBtn.style.display = 'none'; return; }
+        if (clearBtn) clearBtn.style.display = '';
+        var html = '';
+        for (var i = b.rounds.length - 1; i >= 0 && i >= b.rounds.length - 30; i--) {
+            var r = b.rounds[i];
+            var t = new Date(r.time);
+            var ts = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0');
+            var pnlCls = r.pnl >= 0 ? 'positive' : 'negative';
+            html += '<div class="tr-strat-round"><span class="tr-strat-round-num">#' + r.num + '</span><span class="tr-strat-round-sym">' + (r.sym || '') + '</span><span class="tr-strat-round-pnl ' + pnlCls + '">' + (r.pnl >= 0 ? '+' : '') + '$' + r.pnl.toFixed(2) + '</span><span class="tr-strat-round-time">' + ts + '</span></div>';
+        }
+        el.innerHTML = html;
+    }
+
+    function _clobStart() {
+        var b = _getClobBot();
+        if (b.running) return;
+        b.running = true; b.startTime = Date.now();
+        _botLog(b, 'CLOB Market Making started. Balance: $' + b.balance.toFixed(0));
+        _clobInterval = setInterval(_clobTick, 1000);
+        _saveClobBot();
+        _stratRenderStats();
+        _stratRenderStartBtn();
+    }
+
+    function _clobStop() {
+        var b = _getClobBot();
+        b.running = false;
+        if (_clobInterval) { clearInterval(_clobInterval); _clobInterval = null; }
+        _botLog(b, 'CLOB Market Making stopped. Balance: $' + b.balance.toFixed(2));
+        _saveClobBot();
+        _stratRenderStats();
+        _stratRenderStartBtn();
+    }
+
+    function _phxStart() {
+        var b = _getPhxBot();
+        if (b.running) return;
+        b.running = true; b.startTime = Date.now();
+        _botLog(b, 'Phoenix started. Balance: $' + b.balance.toFixed(0));
+        _phxInterval = setInterval(_phxTick, 1000);
+        _savePhxBot();
+        _stratRenderStats();
+        _stratRenderStartBtn();
+    }
+
+    function _phxStop() {
+        var b = _getPhxBot();
+        b.running = false;
+        if (_phxInterval) { clearInterval(_phxInterval); _phxInterval = null; }
+        _botLog(b, 'Phoenix stopped. Balance: $' + b.balance.toFixed(2));
+        _savePhxBot();
+        _stratRenderStats();
+        _stratRenderStartBtn();
+    }
+
+    function _stratRenderStartBtn() {
+        var btn = $('trBotStartBtn');
+        if (!btn) return;
+        var isRunning = (_tradeStrategy === 'clob' && _getClobBot().running) || (_tradeStrategy === 'phoenix' && _getPhxBot().running);
+        btn.textContent = isRunning ? '\u25A0' : '\u25B6';
+        btn.className = 'tr-bot-start-btn' + (isRunning ? ' running' : '');
+    }
+
+    function initStrategiesPanel() {
+        if (_stratInited) { _stratRenderStats(); _stratRenderStartBtn(); return; }
+        _stratInited = true;
+
+        // Read saved settings
+        var b = _getClobBot();
+        var balInp = $('trBotBalInput');
+        var spreadInp = $('trClobMinSpread');
+        var rebateInp = $('trClobRebate');
+        var sizeInp = $('trClobOrderSize');
+        var timeoutInp = $('trClobTimeout');
+        var gasInp = $('trClobGasCost');
+        if (balInp) balInp.value = b.balance;
+        if (spreadInp) spreadInp.value = b.minSpread;
+        if (rebateInp) rebateInp.value = b.rebate;
+        if (sizeInp) sizeInp.value = b.orderSize;
+        if (timeoutInp) timeoutInp.value = b.timeout;
+        if (gasInp) gasInp.value = b.gasCost;
+
+        var pb = _getPhxBot();
+        var pBalInp = $('phxBalInput');
+        var pEntryInp = $('phxEntryCents');
+        var pTargetInp = $('phxTargetCents');
+        var pBudgetMode = $('phxBudgetMode');
+        var pBudgetPct = $('phxBudgetPct');
+        var pBudgetFixed = $('phxBudgetFixed');
+        var pStopEnabled = $('phxStopEnabled');
+        var pStopPct = $('phxStopPct');
+        if (pBalInp) pBalInp.value = pb.balance;
+        if (pEntryInp) pEntryInp.value = pb.entryCents;
+        if (pTargetInp) pTargetInp.value = pb.targetCents;
+        if (pBudgetMode) pBudgetMode.value = pb.budgetMode;
+        if (pBudgetPct) pBudgetPct.value = pb.budgetPct;
+        if (pBudgetFixed) pBudgetFixed.value = pb.budgetFixed;
+        if (pStopEnabled) pStopEnabled.checked = pb.stopEnabled;
+        if (pStopPct) pStopPct.value = pb.stopPct;
+        if (pBudgetFixed) pBudgetFixed.style.display = pb.budgetMode === 'fixed' ? '' : 'none';
+        if (pBudgetPct) pBudgetPct.style.display = pb.budgetMode === 'pct' ? '' : 'none';
+
+        // Strategy tabs
+        document.querySelectorAll('.tr-strategies-tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.tr-strategies-tab').forEach(function(t) { t.classList.remove('active'); });
+                tab.classList.add('active');
+                var aiTab = $('trStrategiesTabAI');
+                var myTab = $('trStrategiesTabMy');
+                if (aiTab) aiTab.style.display = tab.dataset.strategyTab === 'ai' ? '' : 'none';
+                if (myTab) myTab.style.display = tab.dataset.strategyTab === 'my' ? '' : 'none';
+            });
+        });
+
+        // Strategy option switching
+        document.querySelectorAll('.tr-strat-opt').forEach(function(opt) {
+            opt.addEventListener('click', function() {
+                document.querySelectorAll('.tr-strat-opt').forEach(function(o) { o.classList.remove('active'); });
+                opt.classList.add('active');
+                _tradeStrategy = opt.dataset.strategy;
+                var cc = $('trBotClobContent');
+                var dc = $('trBotDeltaContent');
+                var pc = $('trBotPhoenixContent');
+                if (cc) cc.style.display = _tradeStrategy === 'clob' ? '' : 'none';
+                if (dc) dc.style.display = _tradeStrategy === 'delta' ? '' : 'none';
+                if (pc) pc.style.display = _tradeStrategy === 'phoenix' ? '' : 'none';
+                _stratRenderStartBtn();
+                _stratRenderStats();
+            });
+        });
+
+        // Start/Stop button
+        var startBtn = $('trBotStartBtn');
+        if (startBtn) startBtn.addEventListener('click', function() {
+            if (_tradeStrategy === 'clob') {
+                _getClobBot().running ? _clobStop() : _clobStart();
+            } else if (_tradeStrategy === 'phoenix') {
+                _getPhxBot().running ? _phxStop() : _phxStart();
+            }
+        });
+
+        // Asset buttons (CLOB)
+        document.querySelectorAll('#trBotAssetBtns .tr-strat-asset-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                btn.classList.toggle('active');
+                var assets = [];
+                document.querySelectorAll('#trBotAssetBtns .tr-strat-asset-btn.active').forEach(function(b) { assets.push(b.dataset.asset); });
+                _getClobBot().selectedAssets = assets.length > 0 ? assets : ['BTC'];
+                _saveClobBot();
+            });
+        });
+
+        // Asset buttons (Phoenix)
+        document.querySelectorAll('#phxAssetBtns .tr-strat-asset-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                btn.classList.toggle('active');
+                var assets = [];
+                document.querySelectorAll('#phxAssetBtns .tr-strat-asset-btn.active').forEach(function(b) { assets.push(b.dataset.asset); });
+                _getPhxBot().selectedAssets = assets.length > 0 ? assets : ['BTC'];
+                _savePhxBot();
+            });
+        });
+
+        // CLOB settings change handlers
+        if (balInp) balInp.addEventListener('change', function() { _getClobBot().balance = parseFloat(balInp.value) || 100000; _saveClobBot(); });
+        if (spreadInp) spreadInp.addEventListener('change', function() { _getClobBot().minSpread = parseFloat(spreadInp.value) || 2; _saveClobBot(); });
+        if (rebateInp) rebateInp.addEventListener('change', function() { _getClobBot().rebate = parseFloat(rebateInp.value) || 20; _saveClobBot(); });
+        if (sizeInp) sizeInp.addEventListener('change', function() { _getClobBot().orderSize = parseFloat(sizeInp.value) || 100; _saveClobBot(); });
+        if (timeoutInp) timeoutInp.addEventListener('change', function() { _getClobBot().timeout = parseInt(timeoutInp.value) || 3; _saveClobBot(); });
+        if (gasInp) gasInp.addEventListener('change', function() { _getClobBot().gasCost = parseFloat(gasInp.value) || 0.02; _saveClobBot(); });
+
+        // Phoenix settings change handlers
+        if (pBalInp) pBalInp.addEventListener('change', function() { _getPhxBot().balance = parseFloat(pBalInp.value) || 1000; _savePhxBot(); });
+        if (pEntryInp) pEntryInp.addEventListener('change', function() { _getPhxBot().entryCents = parseInt(pEntryInp.value) || 2; _savePhxBot(); });
+        if (pTargetInp) pTargetInp.addEventListener('change', function() { _getPhxBot().targetCents = parseInt(pTargetInp.value) || 20; _savePhxBot(); });
+        if (pBudgetMode) pBudgetMode.addEventListener('change', function() {
+            _getPhxBot().budgetMode = pBudgetMode.value; _savePhxBot();
+            if (pBudgetPct) pBudgetPct.style.display = pBudgetMode.value === 'pct' ? '' : 'none';
+            if (pBudgetFixed) pBudgetFixed.style.display = pBudgetMode.value === 'fixed' ? '' : 'none';
+        });
+        if (pBudgetPct) pBudgetPct.addEventListener('change', function() { _getPhxBot().budgetPct = parseFloat(pBudgetPct.value) || 5; _savePhxBot(); });
+        if (pBudgetFixed) pBudgetFixed.addEventListener('change', function() { _getPhxBot().budgetFixed = parseFloat(pBudgetFixed.value) || 15; _savePhxBot(); });
+        if (pStopEnabled) pStopEnabled.addEventListener('change', function() { _getPhxBot().stopEnabled = pStopEnabled.checked; _savePhxBot(); });
+        if (pStopPct) pStopPct.addEventListener('change', function() { _getPhxBot().stopPct = parseInt(pStopPct.value) || 30; _savePhxBot(); });
+
+        // History toggle
+        var histToggle = $('trBotHistToggle');
+        if (histToggle) histToggle.addEventListener('click', function() {
+            var body = $('trBotHistBody');
+            if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+        });
+
+        // Clear rounds
+        var clearClob = $('trBotRoundsClear');
+        if (clearClob) clearClob.addEventListener('click', function() { _getClobBot().rounds = []; _saveClobBot(); _botRenderRounds(_getClobBot()); });
+        var clearPhx = $('phxRoundsClear');
+        if (clearPhx) clearPhx.addEventListener('click', function() { _getPhxBot().rounds = []; _savePhxBot(); _botRenderRounds(_getPhxBot()); });
+
+        _stratRenderStats();
+        _stratRenderStartBtn();
+        _botRenderLog(_getClobBot());
+        _botRenderRounds(_getClobBot());
+        _botRenderRounds(_getPhxBot());
     }
 
     // ====================== FAVORITES / TRACKER ======================
