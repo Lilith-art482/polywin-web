@@ -568,86 +568,40 @@
     }
 
     // ====================== TRADINGVIEW CHART ======================
-    var _tvChartInstance = null;
-    var _tvCandleSeries = null;
+    var _tvCurrentSymbol = null;
 
-    var SYMBOL_MAP = {
-        'BINANCE:BTCUSDT': 'BTCUSDT',
-        'BINANCE:ETHUSDT': 'ETHUSDT',
-        'BINANCE:SOLUSDT': 'SOLUSDT',
-        'BINANCE:XRPUSDT': 'XRPUSDT'
-    };
+    function _buildTvWidgetUrl(symbol, interval) {
+        symbol = symbol || 'BINANCE:BTCUSDT';
+        interval = interval || '5';
+        var isLight = document.body.classList.contains('light-theme');
+        var studies = JSON.stringify(['MASimple@tv-basicstudies','Volume@tv-basicstudies']);
+        var feats = JSON.stringify(['chart','side_toolbar','drawing_tools','chart_crosshair_menu','chart_multiple_instance','symbol_search','keep_info_panel_open','uppercase_in_symbols_search','delete_symbol_in_search']);
+        return 'https://s.tradingview.com/widgetembed/?symbol=' + encodeURIComponent(symbol)
+            + '&interval=' + interval
+            + '&theme=' + (isLight ? 'light' : 'dark')
+            + '&style=' + (isLight ? '1' : '1')
+            + '&locale=en'
+            + '&hide_side_toolbar=0&symboledit=1&saveimage=0&allow_symbol_change=1'
+            + '&toolbarbg=' + encodeURIComponent(isLight ? '#f1f3f6' : '#1e222d')
+            + '&studies=' + encodeURIComponent(studies)
+            + '&timezone=exchange'
+            + '&enabled_features=' + encodeURIComponent(feats);
+    }
 
-    async function loadTVChart(containerId, symbol, interval) {
+    function loadTVChart(containerId, symbol, interval) {
         symbol = symbol || 'BINANCE:BTCUSDT';
         interval = interval || '5';
         var container = $(containerId);
         if (!container) return;
-
-        // Destroy old chart
-        if (_tvChartInstance) {
-            _tvChartInstance.remove();
-            _tvChartInstance = null;
-            _tvCandleSeries = null;
-        }
         container.innerHTML = '';
 
-        if (typeof LightweightCharts === 'undefined') {
-            container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6b7280;font-size:12px">Загрузка графика...</div>';
-            return;
-        }
+        var iframe = document.createElement('iframe');
+        iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
+        iframe.setAttribute('allowfullscreen', 'true');
+        iframe.src = _buildTvWidgetUrl(symbol, interval);
+        container.appendChild(iframe);
 
-        var isLight = document.body.classList.contains('light-theme');
-        _tvChartInstance = LightweightCharts.createChart(container, {
-            width: container.clientWidth,
-            height: container.clientHeight || 320,
-            layout: {
-                background: { type: 'solid', color: isLight ? '#ffffff' : '#131722' },
-                textColor: isLight ? '#333' : '#d1d4dc',
-                fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif'
-            },
-            grid: {
-                vertLines: { color: isLight ? '#e1e4e8' : '#1e222d' },
-                horzLines: { color: isLight ? '#e1e4e8' : '#1e222d' }
-            },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: { borderColor: isLight ? '#d1d4dc' : '#2a2e39', timeVisible: true, secondsVisible: false },
-            rightPriceScale: { borderColor: isLight ? '#d1d4dc' : '#2a2e39' }
-        });
-
-        _tvCandleSeries = _tvChartInstance.addCandlestickSeries({
-            upColor: '#26a69a',
-            downColor: '#ef5350',
-            borderVisible: false,
-            wickUpColor: '#26a69a',
-            wickDownColor: '#ef5350'
-        });
-
-        // Resize observer
-        var ro = new ResizeObserver(function() {
-            if (_tvChartInstance && container.clientWidth > 0) {
-                _tvChartInstance.applyOptions({ width: container.clientWidth });
-            }
-        });
-        ro.observe(container);
-        container._tvRO = ro;
-
-        // Fetch klines from Binance public API
-        var binanceSym = SYMBOL_MAP[symbol] || 'BTCUSDT';
-        try {
-            var url = 'https://api.binance.com/api/v3/klines?symbol=' + binanceSym + '&interval=' + interval + 'm&limit=500';
-            var resp = await fetch(url);
-            var data = await resp.json();
-            if (Array.isArray(data)) {
-                var candles = data.map(function(k) {
-                    return { time: Math.floor(k[0] / 1000), open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
-                });
-                _tvCandleSeries.setData(candles);
-                _tvChartInstance.timeScale().fitContent();
-            }
-        } catch(e) {
-            container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6b7280;font-size:12px">Ошибка загрузки графика</div>';
-        }
+        _tvCurrentSymbol = symbol;
     }
 
     function reloadTVChart() {
@@ -658,29 +612,8 @@
         loadTVChart('tvTradeChart', sym, '5');
     }
 
-    // Poll Binance for live updates
-    var _tvPollInterval = null;
-    function _startTvPoll(symbol) {
-        if (_tvPollInterval) clearInterval(_tvPollInterval);
-        if (!_tvCandleSeries) return;
-        var binanceSym = SYMBOL_MAP[symbol] || 'BTCUSDT';
-        _tvPollInterval = setInterval(async function() {
-            if (!_tvCandleSeries) { clearInterval(_tvPollInterval); return; }
-            try {
-                var resp = await fetch('https://api.binance.com/api/v3/klines?symbol=' + binanceSym + '&interval=5m&limit=1');
-                var data = await resp.json();
-                if (data && data[0]) {
-                    var k = data[0];
-                    _tvCandleSeries.update({
-                        time: Math.floor(k[0] / 1000),
-                        open: parseFloat(k[1]),
-                        high: parseFloat(k[2]),
-                        low: parseFloat(k[3]),
-                        close: parseFloat(k[4])
-                    });
-                }
-            } catch(e) {}
-        }, 5000);
+    function _startTvPoll() {
+        // TradingView widget handles live updates internally
     }
 
     // ====================== POLYMARKET API ======================
@@ -850,7 +783,7 @@
         if (firstSection) {
             var chartDiv = document.createElement('div');
             chartDiv.className = 'tv-chart-section';
-            chartDiv.innerHTML = '<div class="tv-chart-container" id="tvWalletChart" style="height:350px"></div>';
+            chartDiv.innerHTML = '<div class="tv-chart-container" id="tvWalletChart" style="height:420px"></div>';
             firstSection.after(chartDiv);
             loadTVChart('tvWalletChart');
         }
@@ -1011,6 +944,9 @@
 
         content.innerHTML = ''
             + '<div class="tt-top-row">'
+            +   '<div class="tt-whales-col">'
+            +     '<div id="ttWhalesSection" class="wh-section" style="display:none"></div>'
+            +   '</div>'
             +   '<div class="tt-chart-col">'
             +     '<div class="tv-chart-section" id="ttChartSection" style="display:none">'
             +       '<div class="tv-chart-container" id="tvTradeChart"></div>'
@@ -1026,7 +962,6 @@
             +       '</div>'
             +       '<div id="ttLinkStatus" class="tt-link-status"></div>'
             +       '<div id="ttSelectedMarket"></div>'
-            +       '<div id="ttWhalesSection" class="wh-section" style="display:none"></div>'
             +     '</div>'
             +   '</div>'
             +   '<div class="tt-panel-col">'
@@ -1128,13 +1063,11 @@
                     bar.querySelectorAll('.tv-sym-btn').forEach(function(b) { b.classList.remove('active'); });
                     btn.classList.add('active');
                     loadTVChart('tvTradeChart', btn.dataset.sym, '5');
-                    _startTvPoll(btn.dataset.sym);
                 });
             });
         }
 
         loadTVChart('tvTradeChart', symbol, '5');
-        _startTvPoll(symbol);
     }
 
     async function loadEventWhales(ev) {
