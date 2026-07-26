@@ -569,6 +569,26 @@
 
     // ====================== TRADINGVIEW CHART ======================
     var _tvCurrentSymbol = null;
+    var _tvCurrentSource = 'tv';
+    var _tvCurrentInterval = '5';
+    var _tvChainlinkWs = null;
+
+    var _chainlinkSymbols = {
+        'BTCUSDT': 'btc-usd',
+        'ETHUSDT': 'eth-usd',
+        'SOLUSDT': 'sol-usd',
+        'XRPUSDT': 'xrp-usd',
+        'DOGEUSDT': 'doge-usd',
+        'ADAUSDT': 'ada-usd',
+        'DOTUSDT': 'dot-usd',
+        'AVAXUSDT': 'avax-usd',
+        'LINKUSDT': 'link-usd',
+        'MATICUSDT': 'matic-usd',
+        'LTCUSDT': 'ltc-usd',
+        'UNIUSDT': 'uni-usd',
+        'ATOMUSDT': 'atom-usd',
+        'FILUSDT': 'fil-usd'
+    };
 
     function _buildTvWidgetUrl(symbol, interval) {
         symbol = symbol || 'BINANCE:BTCUSDT';
@@ -588,9 +608,12 @@
             + '&enabled_features=' + encodeURIComponent(feats);
     }
 
-    function loadTVChart(containerId, symbol, interval) {
-        symbol = symbol || 'BINANCE:BTCUSDT';
-        interval = interval || '5';
+    function _getBinanceSymbol(tvSymbol) {
+        if (!tvSymbol) return 'BTCUSDT';
+        return tvSymbol.replace('BINANCE:', '');
+    }
+
+    function _loadChainlinkChart(containerId, symbol, interval) {
         var container = $(containerId);
         if (!container) return;
         container.innerHTML = '';
@@ -598,10 +621,109 @@
         var iframe = document.createElement('iframe');
         iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
         iframe.setAttribute('allowfullscreen', 'true');
-        iframe.src = _buildTvWidgetUrl(symbol, interval);
+        iframe.src = 'chainlink-chart.html';
         container.appendChild(iframe);
 
+        var binanceSym = _getBinanceSymbol(symbol);
+        var isDark = !document.body.classList.contains('light-theme');
+
+        function onReady() {
+            try {
+                iframe.contentWindow.postMessage({ type: 'init', dark: isDark, symbol: binanceSym }, '*');
+            } catch(e) {}
+        }
+
+        iframe.addEventListener('load', onReady);
+
+        if (_tvChainlinkWs) { try { _tvChainlinkWs.close(); } catch(e) {} _tvChainlinkWs = null; }
+
+        try {
+            var ws = new WebSocket('wss://ws-live-data.polymarket.com');
+            _tvChainlinkWs = ws;
+            var clSymbol = _chainlinkSymbols[binanceSym] || 'btc-usd';
+            var candles = [];
+            var lastTs = 0;
+
+            ws.onopen = function() {
+                ws.send(JSON.stringify({
+                    action: 'subscribe',
+                    subscriptions: [{
+                        topic: 'crypto_prices_chainlink',
+                        type: '*',
+                        filters: JSON.stringify({ symbol: clSymbol })
+                    }]
+                }));
+                ws.send('PING');
+                setInterval(function() {
+                    if (ws.readyState === 1) ws.send('PING');
+                }, 4000);
+            };
+            ws.onmessage = function(e) {
+                if (e.data === 'PONG') return;
+                try {
+                    var msg = JSON.parse(e.data);
+                    if (msg.topic === 'crypto_prices_chainlink' && msg.payload && msg.payload.value) {
+                        var price = msg.payload.value;
+                        var ts = msg.payload.timestamp || Date.now();
+                        var candleTime = Math.floor(ts / 300) * 300;
+                        var last = candles[candles.length - 1];
+                        if (last && last.time === candleTime) {
+                            last.high = Math.max(last.high, price);
+                            last.low = Math.min(last.low, price);
+                            last.close = price;
+                        } else {
+                            candles.push({ time: candleTime, open: price, high: price, low: price, close: price });
+                            if (candles.length > 300) candles.shift();
+                        }
+                        try {
+                            iframe.contentWindow.postMessage({ type: 'update', candle: candles[candles.length - 1] }, '*');
+                        } catch(err) {}
+                    }
+                } catch(err) {}
+            };
+            ws.onerror = function() {};
+            ws.onclose = function() {};
+        } catch(e) {}
+    }
+
+    function loadTVChart(containerId, symbol, interval, source) {
+        symbol = symbol || 'BINANCE:BTCUSDT';
+        interval = interval || '5';
+        source = source || _tvCurrentSource;
+        var container = $(containerId);
+        if (!container) return;
+
+        if (_tvChainlinkWs) { try { _tvChainlinkWs.close(); } catch(e) {} _tvChainlinkWs = null; }
+
+        if (source === 'cl') {
+            _loadChainlinkChart(containerId, symbol, interval);
+        } else {
+            container.innerHTML = '';
+            var iframe = document.createElement('iframe');
+            iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
+            iframe.setAttribute('allowfullscreen', 'true');
+            iframe.src = _buildTvWidgetUrl(symbol, interval);
+            container.appendChild(iframe);
+        }
+
         _tvCurrentSymbol = symbol;
+        _tvCurrentSource = source;
+        _tvCurrentInterval = interval;
+    }
+
+    function _setupSourceBar() {
+        var srcBar = $('tvSourceBar');
+        if (!srcBar) return;
+        srcBar.addEventListener('click', function(e) {
+            var btn = e.target.closest('.tv-chart-src');
+            if (!btn) return;
+            var src = btn.getAttribute('data-src');
+            if (src === _tvCurrentSource) return;
+            srcBar.querySelectorAll('.tv-chart-src').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            _tvCurrentSource = src;
+            loadTVChart('tvTradeChart', _tvCurrentSymbol, _tvCurrentInterval, src);
+        });
     }
 
     function reloadTVChart() {
@@ -609,7 +731,7 @@
         if (!container) return;
         var btn = document.querySelector('.tv-sym-btn.active');
         var sym = btn ? btn.dataset.sym : 'BINANCE:BTCUSDT';
-        loadTVChart('tvTradeChart', sym, '5');
+        loadTVChart('tvTradeChart', sym, '5', _tvCurrentSource);
     }
 
     function _startTvPoll() {
@@ -949,6 +1071,10 @@
             +   '</div>'
             +   '<div class="tt-chart-col">'
             +     '<div class="tv-chart-section" id="ttChartSection" style="display:none">'
+            +       '<div class="tv-chart-source-bar" id="tvSourceBar">'
+            +         '<button class="tv-chart-src active" data-src="tv">TradingView</button>'
+            +         '<button class="tv-chart-src" data-src="cl">Chainlink</button>'
+            +       '</div>'
             +       '<div class="tv-chart-container" id="tvTradeChart"></div>'
             +       '<div class="tt-sym-bar" id="ttSymBar"></div>'
             +     '</div>'
@@ -983,6 +1109,7 @@
 
         setupBacktest();
         renderTradeWallets();
+        _setupSourceBar();
         setTimeout(function() {
             initCopyPanel();
             mountTradingPanelOnMarket();
@@ -1062,12 +1189,12 @@
                 btn.addEventListener('click', function() {
                     bar.querySelectorAll('.tv-sym-btn').forEach(function(b) { b.classList.remove('active'); });
                     btn.classList.add('active');
-                    loadTVChart('tvTradeChart', btn.dataset.sym, '5');
+                    loadTVChart('tvTradeChart', btn.dataset.sym, '5', _tvCurrentSource);
                 });
             });
         }
 
-        loadTVChart('tvTradeChart', symbol, '5');
+        loadTVChart('tvTradeChart', symbol, '5', _tvCurrentSource);
     }
 
     async function loadEventWhales(ev) {
