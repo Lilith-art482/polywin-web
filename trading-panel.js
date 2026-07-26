@@ -1,13 +1,6 @@
 /**
  * TradingPanel — React компонент торговой панели для Polymarket
- * 
- * Входные данные (eventData):
- * {
- *   eventId, question, outcomes: [{id, label, price, volume}],
- *   currentUserBalance, marketType, timeRemaining, tickSize
- * }
- * 
- * Callback: onPlaceOrder({ type, side, outcomeId, amount, price, shares, expiry })
+ * Дизайн полностью соответствует расширению.
  */
 (function() {
     'use strict';
@@ -16,418 +9,355 @@
         if (n == null || isNaN(n)) return '—';
         return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
     };
-
     var fmtPrice = function(n) {
         if (n == null || isNaN(n)) return '—';
         return (n * 100).toFixed(1) + '¢';
     };
-
     var h = React.createElement;
 
-    // ===== Mini Components =====
+    /* ===== Profile presets ===== */
+    var PROFILES = [
+        { buy: [10, 25, 50, 100], sell: [25, 50, 75], sellUsd: [0, 0, 0] },
+        { buy: [25, 50, 100, 250], sell: [25, 50, 75], sellUsd: [0, 0, 0] },
+        { buy: [50, 100, 250, 500], sell: [25, 50, 75], sellUsd: [0, 0, 0] }
+    ];
 
-    function Spinner() {
-        return h('svg', { className: 'tp-spin', viewBox: '0 0 24 24', width: 16, height: 16 },
-            h('circle', { cx: 12, cy: 12, r: 10, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeDasharray: '31.4 31.4', strokeLinecap: 'round' })
-        );
-    }
-
-    function TabBar(props) {
-        return h('div', { className: 'tp-tabs' },
-            h('button', {
-                className: 'tp-tab' + (props.active === 'buy' ? ' tp-tab-buy active' : ''),
-                onClick: function() { props.onChange('buy'); }
-            }, 'Купить'),
-            h('button', {
-                className: 'tp-tab' + (props.active === 'sell' ? ' tp-tab-sell active' : ''),
-                onClick: function() { props.onChange('sell'); }
-            }, 'Продать')
-        );
-    }
-
-    function OrderTypeToggle(props) {
-        return h('div', { className: 'tp-toggle' },
-            h('button', {
-                className: 'tp-toggle-btn' + (props.active === 'market' ? ' active' : ''),
-                onClick: function() { props.onChange('market'); }
-            }, 'Рынок'),
-            h('button', {
-                className: 'tp-toggle-btn' + (props.active === 'limit' ? ' active' : ''),
-                onClick: function() { props.onChange('limit'); }
-            }, 'Лимит')
-        );
-    }
-
-    function OutcomeSelector(props) {
-        return h('div', { className: 'tp-outcomes' },
-            props.outcomes.map(function(out) {
-                var selected = props.selectedId === out.id;
-                var isYes = out.id === 'yes';
-                return h('button', {
-                    key: out.id,
-                    className: 'tp-outcome-btn' + (selected ? ' selected' : '') + (isYes ? ' yes' : ' no'),
-                    onClick: function() { props.onSelect(out.id); }
-                },
-                    h('span', { className: 'tp-outcome-label' }, out.label),
-                    h('span', { className: 'tp-outcome-price' }, fmtPrice(out.price))
-                );
-            })
-        );
-    }
-
-    function QuickAmounts(props) {
-        var percents = [10, 25, 50, 100];
-        return h('div', { className: 'tp-quick-row' },
-            percents.map(function(pct) {
-                var val = Math.floor(props.balance * pct / 100);
-                return h('button', {
-                    key: pct,
-                    className: 'tp-quick-btn',
-                    onClick: function() { props.onSelect(val); }
-                }, pct + '%');
-            })
-        );
-    }
-
-    function LimitQuickStep(props) {
-        return h('div', { className: 'tp-quick-row' },
-            [-100, -10, 10, 100].map(function(step) {
-                return h('button', {
-                    key: step,
-                    className: 'tp-quick-btn tp-step-btn',
-                    onClick: function() { props.onStep(step); }
-                }, (step > 0 ? '+' : '') + step);
-            })
-        );
-    }
-
-    function ExpiryDropdown(props) {
-        var options = [
-            { value: 'gtc', label: 'Никогда' },
-            { value: '1d', label: '1 день' },
-            { value: '1w', label: '1 неделя' },
-            { value: '1m', label: '1 месяц' }
-        ];
-        return h('div', { className: 'tp-field' },
-            h('label', { className: 'tp-label' }, 'Срок действия'),
-            h('div', { className: 'tp-select-wrap' },
-                h('select', {
-                    className: 'tp-select',
-                    value: props.value,
-                    onChange: function(e) { props.onChange(e.target.value); }
-                },
-                    options.map(function(o) {
-                        return h('option', { key: o.value, value: o.value }, o.label);
-                    })
-                )
-            )
-        );
-    }
-
-    // ===== Theme Hook =====
-
+    /* ===== Theme hook ===== */
     function useTheme() {
         var _a = React.useState(function() {
             return document.body.classList.contains('light-theme') ? 'light' : 'dark';
         });
         var theme = _a[0]; var setTheme = _a[1];
-
         React.useEffect(function() {
-            var observer = new MutationObserver(function() {
+            var obs = new MutationObserver(function() {
                 setTheme(document.body.classList.contains('light-theme') ? 'light' : 'dark');
             });
-            observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-            return function() { observer.disconnect(); };
+            obs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            return function() { obs.disconnect(); };
         }, []);
-
-        var isLight = theme === 'light';
-        return {
-            theme: theme,
-            vars: {
-                '--tp-bg': isLight ? '#FFFFFF' : '#0B0E14',
-                '--tp-bg-card': isLight ? '#F8F9FA' : '#14181F',
-                '--tp-bg-input': isLight ? '#FFFFFF' : '#1A1F2B',
-                '--tp-bg-hover': isLight ? '#F0F1F3' : '#1C2030',
-                '--tp-border': isLight ? '#E0E2E7' : '#23273A',
-                '--tp-text': isLight ? '#1A1A2E' : '#FFFFFF',
-                '--tp-text-sec': isLight ? '#6B7280' : '#737B8D',
-                '--tp-text-dim': isLight ? '#9CA3AF' : '#505767',
-                '--tp-buy': '#00D4AA',
-                '--tp-buy-bg': isLight ? 'rgba(0,212,170,0.08)' : 'rgba(0,212,170,0.1)',
-                '--tp-sell': '#FF3B6F',
-                '--tp-sell-bg': isLight ? 'rgba(255,59,111,0.08)' : 'rgba(255,59,111,0.1)',
-                '--tp-radius': '12px'
-            }
-        };
+        return theme;
     }
 
-    // ===== Main Component =====
-
+    /* ===== Main Component ===== */
     function TradingPanel(props) {
-        var eventData = props.eventData || {};
-        var outcomes = eventData.outcomes || [];
-        var balance = eventData.currentUserBalance || 0;
-        var tickSize = eventData.tickSize || 0.01;
+        var ev = props.eventData || {};
+        var outcomes = ev.outcomes || [];
+        var balance = ev.currentUserBalance || 0;
+        var tickSize = ev.tickSize || 0.01;
 
-        var themeData = useTheme();
+        var theme = useTheme();
+        var isLight = theme === 'light';
 
-        var _a = React.useState('buy');
-        var side = _a[0]; var setSide = _a[1];
-        var _b = React.useState('market');
-        var orderType = _b[0]; var setOrderType = _b[1];
-        var _c = React.useState(outcomes[0] ? outcomes[0].id : 'yes');
-        var selectedOutcome = _c[0]; var setSelectedOutcome = _c[1];
-        var _d = React.useState('');
-        var amount = _d[0]; var setAmount = _d[1];
-        var _e = React.useState('');
-        var limitPrice = _e[0]; var setLimitPrice = _e[1];
-        var _f = React.useState('');
-        var shares = _f[0]; var setShares = _f[1];
-        var _g = React.useState('gtc');
-        var expiry = _g[0]; var setExpiry = _g[1];
-        var _h = React.useState('idle');
-        var status = _h[0]; var setStatus = _h[1];
-        var _j = React.useState('');
-        var error = _j[0]; var setError = _j[1];
+        var vs = {
+            '--tp-bg': isLight ? '#FFFFFF' : '#0d1117',
+            '--tp-card': isLight ? '#F8F9FA' : '#161b22',
+            '--tp-input': isLight ? '#FFFFFF' : '#0d1117',
+            '--tp-border': isLight ? '#dce0e8' : '#21262d',
+            '--tp-text': isLight ? '#1a1a2e' : '#e6edf3',
+            '--tp-text2': isLight ? '#656d76' : '#8b949e',
+            '--tp-text3': isLight ? '#8b949e' : '#484f58',
+            '--tp-buy': '#22c55e',
+            '--tp-buy-bg': isLight ? 'rgba(34,197,94,0.08)' : 'rgba(34,197,94,0.1)',
+            '--tp-sell': '#ef4444',
+            '--tp-sell-bg': isLight ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.1)',
+            '--tp-accent': '#4C7F6E'
+        };
 
-        var selectedOut = null;
+        var _side = React.useState('buy');
+        var side = _side[0]; var setSide = _side[1];
+        var _otype = React.useState('market');
+        var otype = _otype[0]; var setOtype = _otype[1];
+        var _sel = React.useState(outcomes[0] ? outcomes[0].id : 'yes');
+        var sel = _sel[0]; var setSel = _sel[1];
+        var _amt = React.useState('');
+        var amt = _amt[0]; var setAmt = _amt[1];
+        var _lprice = React.useState('');
+        var lprice = _lprice[0]; var setLprice = _lprice[1];
+        var _lshares = React.useState('1');
+        var lshares = _lshares[0]; var setLshares = _lshares[1];
+        var _expiry = React.useState('never');
+        var expiry = _expiry[0]; var setExpiry = _expiry[1];
+        var _pidx = React.useState(0);
+        var pidx = _pidx[0]; var setPidx = _pidx[1];
+        var _sellmode = React.useState('pct');
+        var sellmode = _sellmode[0]; var setSellmode = _sellmode[1];
+        var _status = React.useState('idle');
+        var status = _status[0]; var setStatus = _status[1];
+        var _err = React.useState('');
+        var err = _err[0]; var setErr = _err[1];
+
+        var profile = PROFILES[pidx] || PROFILES[0];
+        var amtNum = parseFloat(amt) || 0;
+        var lpNum = parseFloat(lprice) || 0;
+        var lsNum = parseInt(lshares, 10) || 0;
+
+        /* Find selected outcome */
+        var selOut = null;
         for (var i = 0; i < outcomes.length; i++) {
-            if (outcomes[i].id === selectedOutcome) { selectedOut = outcomes[i]; break; }
+            if (outcomes[i].id === sel) { selOut = outcomes[i]; break; }
+        }
+        var price = selOut ? selOut.price : null;
+        var isUp = sel === (outcomes[0] ? outcomes[0].id : 'yes');
+        var isDown = !isUp;
+
+        /* Other outcome for display */
+        var otherOut = null;
+        for (var j = 0; j < outcomes.length; j++) {
+            if (outcomes[j].id !== sel) { otherOut = outcomes[j]; break; }
         }
 
-        var price = selectedOut ? selectedOut.price : null;
-        var amountNum = parseFloat(amount) || 0;
-        var limitPriceNum = parseFloat(limitPrice) || 0;
-        var sharesNum = parseInt(shares, 10) || 0;
-
+        /* Computation */
         var total = 0;
-        var potentialWin = 0;
-        var commission = 0;
-
-        if (orderType === 'market' && price && amountNum > 0) {
-            total = amountNum;
-            var sharesCalc = amountNum / price;
-            potentialWin = sharesCalc - amountNum;
-            commission = amountNum * 0.02;
-        } else if (orderType === 'limit' && limitPriceNum > 0 && sharesNum > 0) {
-            total = limitPriceNum * sharesNum;
-            potentialWin = (1 - limitPriceNum) * sharesNum;
-        }
-
-        function validate() {
-            setError('');
-            if (orderType === 'market') {
-                if (!amountNum || amountNum <= 0) { setError('Введите сумму'); return false; }
-                if (amountNum > balance) { setError('Недостаточно средств'); return false; }
-                if (!price || price <= 0) { setError('Цена недоступна'); return false; }
-            } else {
-                if (!limitPriceNum || limitPriceNum < 0.01 || limitPriceNum > 0.99) {
-                    setError('Цена должна быть от 1¢ до 99¢'); return false;
-                }
-                if (!sharesNum || sharesNum <= 0) { setError('Введите количество долей'); return false; }
-                if (total > balance) { setError('Недостаточно средств (итого $' + fmt(total) + ')'); return false; }
-            }
-            return true;
+        var payout = 0;
+        if (otype === 'market' && price && amtNum > 0) {
+            total = amtNum;
+            payout = (amtNum / price) - amtNum;
+        } else if (otype === 'limit' && lpNum > 0 && lsNum > 0) {
+            total = (lpNum / 100) * lsNum;
+            payout = (1 - lpNum / 100) * lsNum;
         }
 
         function handlePlace() {
-            if (!validate()) return;
+            setErr('');
+            if (otype === 'market') {
+                if (!amtNum || amtNum <= 0) { setErr('Введите сумму'); return; }
+                if (amtNum > balance) { setErr('Недостаточно средств'); return; }
+                if (!price || price <= 0) { setErr('Цена недоступна'); return; }
+            }
             setStatus('loading');
             setTimeout(function() {
                 setStatus('success');
                 if (props.onPlaceOrder) {
                     props.onPlaceOrder({
-                        type: orderType,
+                        type: otype,
                         side: side,
-                        outcomeId: selectedOutcome,
-                        amount: orderType === 'market' ? amountNum : undefined,
-                        price: orderType === 'limit' ? limitPriceNum : undefined,
-                        shares: orderType === 'limit' ? sharesNum : undefined,
+                        outcomeId: sel,
+                        amount: otype === 'market' ? amtNum : undefined,
+                        price: otype === 'limit' ? lpNum / 100 : undefined,
+                        shares: otype === 'limit' ? lsNum : undefined,
                         expiry: expiry
                     });
                 }
                 setTimeout(function() {
                     setStatus('idle');
-                    setAmount('');
-                    setShares('');
-                    setLimitPrice('');
+                    setAmt(''); setLprice(''); setLshares('1');
                 }, 2000);
-            }, 800);
+            }, 600);
         }
 
-        function handlePercent(pct) {
-            var val = Math.floor(balance * pct / 100);
-            setAmount(String(val));
-        }
-
-        function handleSharesStep(step) {
-            var next = sharesNum + step;
-            if (next < 0) next = 0;
-            setShares(String(next));
-        }
-
-        function handleLimitStep(step) {
-            var next = Math.round((limitPriceNum + step * tickSize) * 100) / 100;
-            if (next < 0.01) next = 0.01;
-            if (next > 0.99) next = 0.99;
-            setLimitPrice(String(next.toFixed(2)));
+        function handleQuickBuy(val) { setAmt(String(val)); }
+        function handleQuickSell(pct) {
+            if (!selOut) return;
+            var sharesHeld = 100;
+            var sellShares = Math.round(sharesHeld * pct / 100);
+            setAmt(String(sellShares));
+            setSide('sell');
         }
 
         var isBuy = side === 'buy';
-        var accentClass = isBuy ? 'tp-accent-buy' : 'tp-accent-sell';
 
-        // Success state
+        /* === SUCCESS === */
         if (status === 'success') {
-            return h('div', { className: 'tp-panel ' + accentClass, style: themeData.vars },
-                h('div', { className: 'tp-success' },
-                    h('div', { className: 'tp-success-icon' }, '✓'),
-                    h('div', { className: 'tp-success-title' }, isBuy ? 'Ордер размещён' : 'Продажа выполнена'),
-                    h('div', { className: 'tp-success-sub' },
-                        orderType === 'market'
-                            ? (isBuy ? 'Куплено' : 'Продано') + ' на $' + fmt(amountNum)
-                            : 'Лимитный ордер: ' + fmt(sharesNum) + ' долей по ' + fmtPrice(limitPriceNum)
-                    )
+            return h('div', { className: 'tr-panel', style: vs },
+                h('div', { style: { padding: '40px 20px', textAlign: 'center' } },
+                    h('div', { style: { fontSize: '28px', marginBottom: '8px' } }, '\u2713'),
+                    h('div', { style: { fontSize: '14px', fontWeight: 700, color: 'var(--tp-text)', marginBottom: '4px' } },
+                        isBuy ? 'Ордер размещён' : 'Продажа выполнена'),
+                    h('div', { style: { fontSize: '12px', color: 'var(--tp-text2)' } },
+                        isBuy ? 'Куплено на $' + fmt(amtNum) : 'Продано на $' + fmt(amtNum))
                 )
             );
         }
 
-        return h('div', { className: 'tp-panel ' + accentClass, style: themeData.vars },
-            // Header
-            h('div', { className: 'tp-header' },
-                h('div', { className: 'tp-question' }, eventData.question || '—'),
-                eventData.timeRemaining
-                    ? h('div', { className: 'tp-timer' }, '⏱ ' + eventData.timeRemaining)
-                    : null
+        return h('div', { className: 'tr-panel', style: vs },
+
+            /* === Wallet selector (demo mode) === */
+            h('div', { className: 'tr-wallet-row' },
+                h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, style: { flexShrink: 0, color: 'var(--tp-text3)' } },
+                    h('path', { fill: 'currentColor', d: 'M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z' })),
+                h('span', { className: 'tr-wallet-lbl' }, '\u0414\u0435\u043c\u043e \u0431\u0430\u043b\u0430\u043d\u0441:'),
+                h('span', { style: { marginLeft: 'auto', fontSize: '12px', fontWeight: 700, color: 'var(--tp-text)', fontFamily: 'var(--font-mono)' } },
+                    '$' + fmt(balance))
             ),
 
-            // Tabs: Buy / Sell
-            h(TabBar, { active: side, onChange: setSide }),
-
-            // Balance
-            h('div', { className: 'tp-balance' },
-                h('span', { className: 'tp-balance-label' }, 'Баланс'),
-                h('span', { className: 'tp-balance-value' }, '$' + fmt(balance))
-            ),
-
-            // Outcome selector
-            outcomes.length > 0
-                ? h(OutcomeSelector, {
-                    outcomes: outcomes,
-                    selectedId: selectedOutcome,
-                    onSelect: setSelectedOutcome
+            /* === Profile presets P1/P2/P3 === */
+            h('div', { className: 'tr-psetups' },
+                [0, 1, 2].map(function(idx) {
+                    return h('button', {
+                        key: idx,
+                        className: 'tr-psetup-btn' + (pidx === idx ? ' active' : ''),
+                        onClick: function() { setPidx(idx); }
+                    }, 'P' + (idx + 1));
                 })
-                : null,
+            ),
 
-            // Order type toggle
-            h(OrderTypeToggle, { active: orderType, onChange: setOrderType }),
+            /* === Quick buy amounts === */
+            h('div', { className: 'tr-quick-row' },
+                profile.buy.map(function(val) {
+                    return h('button', {
+                        key: val,
+                        className: 'tr-qb-btn' + (amtNum === val ? ' active' : ''),
+                        onClick: function() { handleQuickBuy(val); }
+                    }, '$' + val);
+                })
+            ),
 
-            // === MARKET MODE ===
-            orderType === 'market'
-                ? h('div', { className: 'tp-form' },
-                    h('div', { className: 'tp-field' },
-                        h('label', { className: 'tp-label' }, 'Сумма ($)'),
-                        h('input', {
-                            className: 'tp-input',
-                            type: 'number',
-                            min: 1,
-                            max: balance,
-                            step: 1,
-                            placeholder: '0.00',
-                            value: amount,
-                            onChange: function(e) { setAmount(e.target.value); }
-                        }),
-                        h('div', { className: 'tp-hint' }, 'Макс. доступно: $' + fmt(balance))
+            /* === Amount input === */
+            h('div', { className: 'tr-field' },
+                h('label', { className: 'tr-field-label' }, '\u0421\u0443\u043c\u043c\u0430'),
+                h('input', {
+                    className: 'tr-input',
+                    type: 'number',
+                    min: 0,
+                    step: 'any',
+                    placeholder: '0.00',
+                    value: amt,
+                    onChange: function(e) { setAmt(e.target.value); }
+                })
+            ),
+
+            /* === Order type === */
+            h('div', { className: 'tr-type-group' },
+                h('button', {
+                    className: 'tr-type-btn' + (otype === 'market' ? ' active' : ''),
+                    onClick: function() { setOtype('market'); }
+                }, '\u0420\u044b\u043d\u043e\u043a'),
+                h('button', {
+                    className: 'tr-type-btn' + (otype === 'limit' ? ' active' : ''),
+                    onClick: function() { setOtype('limit'); }
+                }, '\u041b\u0438\u043c\u0438\u0442\u043d\u044b\u0439')
+            ),
+
+            /* === Outcome cards (UP / DOWN) === */
+            outcomes.length >= 2
+                ? h('div', { className: 'tr-direction' },
+                    /* UP / first outcome */
+                    h('button', {
+                        className: 'tr-dir-btn tr-dir-up' + (isUp ? ' active' : ''),
+                        onClick: function() { setSel(outcomes[0].id); }
+                    },
+                        h('div', { className: 'tr-dir-top' },
+                            h('span', { className: 'tr-dir-arrow' }, '\u25B2'),
+                            h('span', { className: 'tr-dir-label' }, outcomes[0].label.toUpperCase()),
+                            h('span', { className: 'tr-dir-price' }, fmtPrice(outcomes[0].price))
+                        ),
+                        h('div', { className: 'tr-dir-bar' },
+                            h('div', { className: 'tr-dir-bar-fill up', style: { width: ((outcomes[0].price || 0) * 100) + '%' } })
+                        ),
+                        h('div', { className: 'tr-dir-liq' }, 'liq $' + fmt(outcomes[0].volume || 0))
                     ),
-                    h(QuickAmounts, { balance: balance, onSelect: handlePercent }),
-                    price != null
-                        ? h('div', { className: 'tp-info-row' },
-                            h('span', null, '≈ ' + fmt(amountNum / price) + ' акций'),
-                            h('span', null, 'Прибыль: +$' + fmt(potentialWin))
-                        )
-                        : null,
-                    h('div', { className: 'tp-info-row tp-fee' },
-                        h('span', null, 'Комиссия ~2%'),
-                        h('span', null, '$' + fmt(commission))
+                    /* DOWN / second outcome */
+                    h('button', {
+                        className: 'tr-dir-btn tr-dir-down' + (isDown ? ' active' : ''),
+                        onClick: function() { setSel(outcomes[1].id); }
+                    },
+                        h('div', { className: 'tr-dir-top' },
+                            h('span', { className: 'tr-dir-arrow' }, '\u25BC'),
+                            h('span', { className: 'tr-dir-label' }, outcomes[1].label.toUpperCase()),
+                            h('span', { className: 'tr-dir-price' }, fmtPrice(outcomes[1].price))
+                        ),
+                        h('div', { className: 'tr-dir-bar' },
+                            h('div', { className: 'tr-dir-bar-fill down', style: { width: ((outcomes[1].price || 0) * 100) + '%' } })
+                        ),
+                        h('div', { className: 'tr-dir-liq' }, 'liq $' + fmt(outcomes[1].volume || 0))
                     )
                 )
                 : null,
 
-            // === LIMIT MODE ===
-            orderType === 'limit'
-                ? h('div', { className: 'tp-form' },
-                    h('div', { className: 'tp-field' },
-                        h('label', { className: 'tp-label' }, 'Лимитная цена'),
-                        h('div', { className: 'tp-stepper' },
-                            h('button', { className: 'tp-step-btn', onClick: function() { handleLimitStep(-1); } }, '−'),
+            /* === Limit fields === */
+            otype === 'limit'
+                ? h('div', { className: 'tr-limit-fields' },
+                    h('div', { className: 'tr-field' },
+                        h('label', { className: 'tr-field-label' }, '\u0426\u0435\u043d\u0430 (\u0446\u0435\u043d\u0442\u044b)'),
+                        h('div', { className: 'tr-stepper' },
+                            h('button', { className: 'tr-step-btn', onClick: function() { var n = Math.max(1, lpNum - 1); setLprice(String(n)); } }, '\u2212'),
                             h('input', {
-                                className: 'tp-input tp-input-center',
-                                type: 'number',
-                                min: 0.01,
-                                max: 0.99,
-                                step: tickSize,
-                                value: limitPrice,
-                                onChange: function(e) { setLimitPrice(e.target.value); }
+                                className: 'tr-input tr-input-center', type: 'number',
+                                min: 1, max: 99, step: 1, placeholder: '0',
+                                value: lprice,
+                                onChange: function(e) { setLprice(e.target.value); }
                             }),
-                            h('button', { className: 'tp-step-btn', onClick: function() { handleLimitStep(1); } }, '+')
+                            h('button', { className: 'tr-step-btn', onClick: function() { var n = Math.min(99, lpNum + 1); setLprice(String(n)); } }, '+')
                         )
                     ),
-                    h('div', { className: 'tp-field' },
-                        h('label', { className: 'tp-label' }, 'Количество долей'),
-                        h('div', { className: 'tp-stepper' },
-                            h('button', { className: 'tp-step-btn', onClick: function() { handleSharesStep(-10); } }, '−10'),
-                            h('button', { className: 'tp-step-btn', onClick: function() { handleSharesStep(-1); } }, '−'),
-                            h('input', {
-                                className: 'tp-input tp-input-center',
-                                type: 'number',
-                                min: 1,
-                                step: 1,
-                                value: shares,
-                                onChange: function(e) { setShares(e.target.value); }
-                            }),
-                            h('button', { className: 'tp-step-btn', onClick: function() { handleSharesStep(1); } }, '+'),
-                            h('button', { className: 'tp-step-btn', onClick: function() { handleSharesStep(10); } }, '+10')
+                    h('div', { className: 'tr-field' },
+                        h('label', { className: 'tr-field-label' }, '\u041a\u043e\u043b-\u0432\u043e \u0434\u043e\u043b\u0435\u0439'),
+                        h('input', {
+                            className: 'tr-input', type: 'number',
+                            min: 1, step: 1, placeholder: '1',
+                            value: lshares,
+                            onChange: function(e) { setLshares(e.target.value); }
+                        })
+                    ),
+                    h('div', { className: 'tr-field' },
+                        h('label', { className: 'tr-field-label' }, '\u0421\u0440\u043e\u043a \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044f'),
+                        h('div', { className: 'tr-expiry-row' },
+                            ['never', '5m', '1h', '24h'].map(function(v) {
+                                var labels = { never: '\u0411\u0435\u0441\u0441\u0440\u043e\u0447\u043d\u043e', '5m': '5 \u043c\u0438\u043d', '1h': '1 \u0447\u0430\u0441', '24h': '24 \u0447\u0430\u0441\u0430' };
+                                return h('button', {
+                                    key: v,
+                                    className: 'tr-expiry-btn' + (expiry === v ? ' active' : ''),
+                                    onClick: function() { setExpiry(v); }
+                                }, labels[v] || v);
+                            })
                         )
-                    ),
-                    h('div', { className: 'tp-info-row' },
-                        h('span', null, 'Итого'),
-                        h('span', { className: 'tp-bold' }, '$' + fmt(total))
-                    ),
-                    h('div', { className: 'tp-info-row' },
-                        h('span', null, 'Выигрыш'),
-                        h('span', { className: 'tp-profit' }, '+$' + fmt(potentialWin))
-                    ),
-                    h(ExpiryDropdown, { value: expiry, onChange: setExpiry })
+                    )
                 )
                 : null,
 
-            // Error
-            error
-                ? h('div', { className: 'tp-error' }, error)
+            /* === Sell section === */
+            h('div', { className: 'tr-sell-section' },
+                h('div', { className: 'tr-sell-header' },
+                    h('span', { className: 'tr-sell-title' }, isBuy ? '' : '\u041f\u0420\u041e\u0414\u0410\u0422\u042c'),
+                    h('div', { className: 'tr-sell-mode' },
+                        h('button', {
+                            className: 'tr-sell-mode-btn' + (sellmode === 'pct' ? ' active' : ''),
+                            onClick: function() { setSellmode('pct'); }
+                        }, '%'),
+                        h('button', {
+                            className: 'tr-sell-mode-btn' + (sellmode === 'usd' ? ' active' : ''),
+                            onClick: function() { setSellmode('usd'); }
+                        }, '$')
+                    )
+                ),
+                h('div', { className: 'tr-quick-row' },
+                    profile.sell.map(function(pct) {
+                        return h('button', {
+                            key: pct,
+                            className: 'tr-qs-btn',
+                            onClick: function() { handleQuickSell(pct); }
+                        }, pct + '%');
+                    }),
+                    h('button', {
+                        className: 'tr-qs-btn tr-qs-close',
+                        onClick: function() { handleQuickSell(100); }
+                    }, 'CLOSE 100%')
+                )
+            ),
+
+            /* === Error === */
+            err
+                ? h('div', { className: 'tr-error' }, err)
                 : null,
 
-            // Submit button
+            /* === Submit === */
             h('button', {
-                className: 'tp-submit ' + accentClass,
+                className: 'tr-submit ' + (isBuy ? 'tr-submit-buy' : 'tr-submit-sell'),
                 disabled: status === 'loading',
                 onClick: handlePlace
-            },
-                status === 'loading'
-                    ? h(Spinner, null)
-                    : (isBuy ? 'Купить по рынку' : (orderType === 'market' ? 'Продать по рынку' : 'Разместить лимитный ордер'))
-            )
+            }, status === 'loading' ? '...' : (isBuy ? '\u041a\u0443\u043f\u0438\u0442\u044c \u043f\u043e \u0440\u044b\u043d\u043a\u0443' : '\u041f\u0440\u043e\u0434\u0430\u0442\u044c'))
         );
     }
 
-    // ===== Mount function =====
-
+    /* ===== Mount ===== */
     function mountTradingPanel(containerId, eventData, onPlaceOrder) {
         var container = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
-        if (!container) { console.error('TradingPanel: container not found'); return null; }
-        var el = React.createElement(TradingPanel, { eventData: eventData, onPlaceOrder: onPlaceOrder });
-        return ReactDOM.createRoot(container).render(el);
+        if (!container) return null;
+        return ReactDOM.createRoot(container).render(
+            h(TradingPanel, { eventData: eventData, onPlaceOrder: onPlaceOrder })
+        );
     }
 
-    // Expose globally
     window.TradingPanel = TradingPanel;
     window.mountTradingPanel = mountTradingPanel;
 })();
