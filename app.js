@@ -1429,6 +1429,7 @@
         html += '<button class="tr-mode-btn active" data-mode="demo">Демо</button>';
         html += '<button class="tr-mode-btn" data-mode="live">Live</button>';
         html += '<button class="tr-mode-btn" data-mode="copy">Copy</button>';
+        html += '<button class="tr-mode-btn" data-mode="strategies">Стратегия</button>';
         html += '</div>';
 
         html += '<div class="tr-panel" id="trDemoPanel">';
@@ -1452,109 +1453,206 @@
         html += '</div></div>';
 
         html += '<div class="tr-panel" id="trStrategiesPanel" style="display:none">';
-        html += '<div class="tr-strat-wrap">';
+        html += '<div class="tr-strategies-section" id="trStrategiesSection">';
         html += '<div class="tr-strategies-tabs">';
         html += '<button class="tr-strategies-tab active" data-strategy-tab="ai">AI Agent</button>';
         html += '<button class="tr-strategies-tab" data-strategy-tab="my">Мои стратегии</button>';
         html += '</div>';
-
         html += '<div id="trStrategiesTabAI">';
-        html += '<div class="tr-strat-agent">';
-        html += '<div class="tr-strat-agent-hdr">';
-        html += '<div class="tr-strat-agent-title"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg><span>AI Agent</span></div>';
-        html += '<button class="tr-bot-start-btn" id="trBotStartBtn">&#9654;</button>';
+        html += '<div class="tr-agent">';
+        html += '<div class="tr-agent-header">';
+        html += '<div class="tr-agent-title">';
+        html += '<div class="tr-agent-title-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div>';
+        html += '<span class="tr-agent-title-text">AI Agent</span>';
         html += '</div>';
-
-        html += '<div class="tr-strat-selector">';
-        html += '<div class="tr-strat-opt active" data-strategy="clob"><span>CLOB Arbitrage</span></div>';
-        html += '<div class="tr-strat-opt" data-strategy="delta"><span>Delta Mesh</span><span class="tr-strat-badge">В разработке</span></div>';
-        html += '<div class="tr-strat-opt" data-strategy="phoenix"><span>Phoenix</span></div>';
+        html += '<div class="tr-agent-hdr-r">';
+        html += '<span class="tr-agent-copy-flash" id="trCopyFlash"></span>';
+        html += '<button class="tr-bot-start-btn" id="trBotStartBtn">\u25b6</button>';
         html += '</div>';
-
+        html += '</div>';
+        html += '<div class="tr-strategy-selector">';
+        html += '<div class="tr-strategy-select-row">';
+        html += '<div class="tr-strategy-opt active" data-strategy="clob">';
+        html += '<span class="tr-strategy-name">CLOB Arbitrage</span>';
+        html += '<button class="tr-strategy-info-btn" data-strategy="clob">\u24d8</button>';
+        html += '</div>';
+        html += '<div class="tr-strategy-opt" data-strategy="delta">';
+        html += '<span class="tr-strategy-name">Delta Mesh</span>';
+        html += '<button class="tr-strategy-info-btn" data-strategy="delta">\u24d8</button>';
+        html += '<span class="tr-strategy-badge">В разработке</span>';
+        html += '</div>';
+        html += '<div class="tr-strategy-opt" data-strategy="phoenix">';
+        html += '<span class="tr-strategy-name">Phoenix</span>';
+        html += '<button class="tr-strategy-info-btn" data-strategy="phoenix">\u24d8</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="tr-agent-wallet">';
+        html += '<div class="tr-agent-wallet-label">Кошелёк</div>';
+        html += '<select class="tr-agent-wallet-sel" id="trBotWalletSelect">';
+        html += '<option value="">Не подключён</option>';
+        html += '</select>';
+        html += '</div>';
+        html += '<div class="tr-agent-rolling">';
+        html += '<div class="tr-agent-rolling-label">Роллинг</div>';
+        html += '<div class="tr-agent-rolling-toggle" id="trBotRollingToggle">';
+        html += '<button class="tr-agent-rolling-btn active" data-rolling="1">Вкл</button>';
+        html += '<button class="tr-agent-rolling-btn" data-rolling="0">Выкл</button>';
+        html += '</div>';
+        html += '<div class="tr-agent-rolling-desc">Прибыль реинвестируется в следующий раунд</div>';
+        html += '</div>';
         html += '<div id="trBotClobContent">';
-        html += '<div class="tr-strat-assets"><div class="tr-strat-assets-label">Assets</div><div class="tr-strat-assets-btns" id="trBotAssetBtns">';
-        html += '<button class="tr-strat-asset-btn active" data-asset="BTC"><span class="tr-strat-asset-icon">&#491;</span>BTC</button>';
-        html += '<button class="tr-strat-asset-btn active" data-asset="ETH"><span class="tr-strat-asset-icon">&#10224;</span>ETH</button>';
-        html += '<button class="tr-strat-asset-btn active" data-asset="SOL"><span class="tr-strat-asset-icon">&#9675;</span>SOL</button>';
+        html += '<div class="tr-agent-assets">';
+        html += '<div class="tr-agent-assets-label">Assets</div>';
+        html += '<div class="tr-agent-assets-btns" id="trBotAssetBtns">';
+        html += '<button class="tr-agent-asset-btn active" data-asset="BTC"><span class="tr-agent-asset-icon">\u0243</span><span>BTC</span></button>';
+        html += '<button class="tr-agent-asset-btn active" data-asset="ETH"><span class="tr-agent-asset-icon">\u27E0</span><span>ETH</span></button>';
+        html += '<button class="tr-agent-asset-btn active" data-asset="SOL"><span class="tr-agent-asset-icon">\u25CB</span><span>SOL</span></button>';
         html += '</div></div>';
-
-        html += '<div class="tr-strat-settings">';
-        html += '<div class="tr-strat-setting"><label>Balance $</label><input id="trBotBalInput" type="number" value="100000" min="1"></div>';
-        html += '<div class="tr-strat-setting"><label>Min Spread</label><div class="tr-strat-setting-input"><input id="trClobMinSpread" type="number" value="2" min="1" max="20" step="0.5"><span>¢</span></div></div>';
-        html += '<div class="tr-strat-setting"><label>Rebate</label><div class="tr-strat-setting-input"><input id="trClobRebate" type="number" value="20" min="0" max="100"><span>%</span></div></div>';
-        html += '<div class="tr-strat-setting"><label>Order Size</label><div class="tr-strat-setting-input"><span>$</span><input id="trClobOrderSize" type="number" value="100" min="1"></div></div>';
-        html += '<div class="tr-strat-setting"><label>Timeout</label><div class="tr-strat-setting-input"><input id="trClobTimeout" type="number" value="3" min="1" max="30"><span>sec</span></div></div>';
-        html += '<div class="tr-strat-setting"><label>Gas $</label><input id="trClobGasCost" type="number" value="0.02" min="0" max="1" step="0.005"></div>';
+        html += '<div class="tr-agent-stats">';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Balance $</div>';
+        html += '<div class="tr-agent-stat-body"><input class="tr-agent-bal-inp" id="trBotBalInput" type="number" value="100000" min="1" step="any"></div>';
         html += '</div>';
-
-        html += '<div class="tr-strat-stats" id="trBotStats">';
-        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Сделок</span><span class="tr-strat-stat-val" id="trBotStatTrades">0</span></div>';
-        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Винрейт</span><span class="tr-strat-stat-val" id="trBotStatWinrate">0%</span></div>';
-        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">PnL</span><span class="tr-strat-stat-val" id="trBotStatPnl">$0.00</span></div>';
+        html += '<div class="tr-agent-stat" id="trBotStats"></div>';
         html += '</div>';
-
-        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr"><span>Позиции (<span id="trBotPosCount">0</span>)</span></div>';
-        html += '<div class="tr-strat-positions" id="trBotPositions"><div class="tr-strat-empty">Нет открытых позиций</div></div></div>';
-
-        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr"><span>Раунды</span>';
-        html += '<button class="tr-strat-section-btn" id="trBotRoundsClear" style="display:none">Очистить</button></div>';
-        html += '<div class="tr-strat-rounds" id="trBotRounds"><div class="tr-strat-empty">Нет завершённых раундов</div></div></div>';
-
-        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr tr-strat-collap" id="trBotHistToggle"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg><span>История</span></div>';
-        html += '<div class="tr-strat-collap-body" id="trBotHistBody" style="display:none">';
-        html += '<div class="tr-strat-hist-filters">';
-        html += '<button class="tr-strat-hist-filter active" data-filter="all">All</button>';
-        html += '<button class="tr-strat-hist-filter" data-filter="BTC">BTC</button>';
-        html += '<button class="tr-strat-hist-filter" data-filter="ETH">ETH</button>';
-        html += '<button class="tr-strat-hist-filter" data-filter="SOL">SOL</button>';
+        html += '<div class="tr-agent-stats" style="margin-top:8px">';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Min Spread</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><input id="trClobMinSpread" type="number" value="2" min="1" max="20" step="0.5" style="width:50px"><span style="font-size:9px;color:var(--text-tertiary)">\u00a2</span></div>';
         html += '</div>';
-        html += '<div class="tr-strat-log" id="trBotLog"><div class="tr-strat-empty">Нет операций</div></div>';
-        html += '</div></div>';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Rebate</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><input id="trClobRebate" type="number" value="20" min="0" max="100" step="1" style="width:50px"><span style="font-size:9px;color:var(--text-tertiary)">%</span></div>';
         html += '</div>';
-
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Order Size</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><span style="font-size:10px;color:var(--text-tertiary)">$</span><input id="trClobOrderSize" type="number" value="100" min="1" step="any" style="width:60px"></div>';
+        html += '</div>';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Timeout</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><input id="trClobTimeout" type="number" value="3" min="1" max="30" step="1" style="width:40px"><span style="font-size:9px;color:var(--text-tertiary)">sec</span></div>';
+        html += '</div>';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Gas $</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><input id="trClobGasCost" type="number" value="0.02" min="0" max="1" step="0.005" style="width:50px"></div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="tr-clob-sim-badge" id="trClobSimBadge" style="display:none"><span class="tr-clob-sim-dot"></span> Simulation Mode</div>';
+        html += '<div class="tr-agent-sec">';
+        html += '<div class="tr-agent-sec-hdr">';
+        html += '<span>Open Positions (<span id="trBotPosCount">0</span>)</span>';
+        html += '<div class="tr-agent-sec-line"></div>';
+        html += '</div>';
+        html += '<div class="tr-demo-bot-positions" id="trBotPositions"><div class="tr-bot-empty">Нет открытых позиций</div></div>';
+        html += '</div>';
+        html += '<div class="tr-agent-sec">';
+        html += '<div class="tr-agent-sec-hdr">';
+        html += '<span>Rounds</span>';
+        html += '<div class="tr-agent-sec-line"></div>';
+        html += '<div class="tr-agent-sec-acts">';
+        html += '<button class="tr-agent-btn" id="trBotRoundsClear" style="display:none">Clear All</button>';
+        html += '<button class="tr-agent-btn" id="trBotRoundsCopy" style="display:none">Copy</button>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="tr-bot-rounds" id="trBotRounds"><div class="tr-bot-rounds-empty">Нет завершённых раундов</div></div>';
+        html += '</div>';
+        html += '<div class="tr-agent-sec">';
+        html += '<div class="tr-agent-sec-hdr tr-agent-collap collapsed" id="trBotHistToggle">';
+        html += '<svg class="tr-agent-arrow" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>';
+        html += '<span>History</span>';
+        html += '<div class="tr-agent-sec-line"></div>';
+        html += '<span class="tr-agent-copy" id="trBotCopyBtn">\u2139 Copy</span>';
+        html += '</div>';
+        html += '<div class="tr-agent-collap-body collapsed" id="trBotHistBody">';
+        html += '<div class="tr-agent-filters" id="trBotHistFilters">';
+        html += '<button class="tr-bot-hist-filter active" data-filter="all">All</button>';
+        html += '<button class="tr-bot-hist-filter" data-filter="BTC">BTC</button>';
+        html += '<button class="tr-bot-hist-filter" data-filter="ETH">ETH</button>';
+        html += '<button class="tr-bot-hist-filter" data-filter="SOL">SOL</button>';
+        html += '</div>';
+        html += '<div class="tr-demo-bot-log" id="trBotLog"><div class="tr-bot-empty">Нет операций</div></div>';
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
         html += '<div id="trBotDeltaContent" style="display:none">';
-        html += '<div class="tr-strat-dev"><div class="tr-strat-dev-icon">&#9881;</div>';
-        html += '<div class="tr-strat-dev-title">В разработке</div>';
-        html += '<div class="tr-strat-dev-desc">Delta Mesh стратегия находится в разработке</div></div></div>';
-
+        html += '<div class="tr-strategy-dev-placeholder">';
+        html += '<div class="tr-strategy-dev-icon">\u2699\uFE0F</div>';
+        html += '<div class="tr-strategy-dev-title">В разработке</div>';
+        html += '<div class="tr-strategy-dev-desc">Delta Mesh стратегия анализирует мгновенный тренд и рассчитывает уровень уверенности для каждой сделки. Рекомендуемый депозит: от $100 ($500 ideally). Скоро.</div>';
+        html += '</div></div>';
         html += '<div id="trBotPhoenixContent" style="display:none">';
-        html += '<div class="tr-strat-assets"><div class="tr-strat-assets-label">Assets</div><div class="tr-strat-assets-btns" id="phxAssetBtns">';
-        html += '<button class="tr-strat-asset-btn active" data-asset="BTC"><span class="tr-strat-asset-icon">&#491;</span>BTC</button>';
-        html += '<button class="tr-strat-asset-btn active" data-asset="ETH"><span class="tr-strat-asset-icon">&#10224;</span>ETH</button>';
-        html += '<button class="tr-strat-asset-btn active" data-asset="SOL"><span class="tr-strat-asset-icon">&#9675;</span>SOL</button>';
+        html += '<div class="tr-agent-assets">';
+        html += '<div class="tr-agent-assets-label">Assets</div>';
+        html += '<div class="tr-agent-assets-btns" id="phxAssetBtns">';
+        html += '<button class="tr-agent-asset-btn active" data-asset="BTC"><span class="tr-agent-asset-icon">\u0243</span><span>BTC</span></button>';
+        html += '<button class="tr-agent-asset-btn active" data-asset="ETH"><span class="tr-agent-asset-icon">\u27E0</span><span>ETH</span></button>';
+        html += '<button class="tr-agent-asset-btn active" data-asset="SOL"><span class="tr-agent-asset-icon">\u25CB</span><span>SOL</span></button>';
         html += '</div></div>';
-        html += '<div class="tr-strat-settings">';
-        html += '<div class="tr-strat-setting"><label>Balance $</label><input id="phxBalInput" type="number" value="1000" min="1"></div>';
-        html += '<div class="tr-strat-setting"><label>Entry</label><div class="tr-strat-setting-input"><input id="phxEntryCents" type="number" value="2" min="1" max="10"><span>¢</span></div></div>';
-        html += '<div class="tr-strat-setting"><label>Target</label><div class="tr-strat-setting-input"><input id="phxTargetCents" type="number" value="20" min="5" max="50"><span>¢</span></div></div>';
+        html += '<div class="tr-agent-stats tr-agent-stats-phoenix">';
+        html += '<div class="tr-agent-stats-row-3">';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Balance</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><span style="font-size:10px;color:var(--text-tertiary)">$</span><input class="tr-agent-bal-inp" id="phxBalInput" type="number" value="1000" min="1" step="any" style="width:auto;min-width:40px;max-width:80px;font-size:11px"></div>';
         html += '</div>';
-        html += '<div class="tr-strat-settings">';
-        html += '<div class="tr-strat-setting"><label>Budget</label>';
-        html += '<select id="phxBudgetMode" style="padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:10px;width:100%;outline:none">';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Entry</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><input id="phxEntryCents" type="number" value="2" min="1" max="10" step="1" style="width:auto;min-width:24px;max-width:50px;font-size:11px"><span style="font-size:9px;color:var(--text-tertiary)">\u00a2</span></div>';
+        html += '</div>';
+        html += '<div class="tr-agent-stat">';
+        html += '<div class="tr-agent-stat-label">Target</div>';
+        html += '<div class="tr-agent-stat-body" style="gap:2px"><input id="phxTargetCents" type="number" value="20" min="5" max="50" step="1" style="width:auto;min-width:24px;max-width:50px;font-size:11px"><span style="font-size:9px;color:var(--text-tertiary)">\u00a2</span></div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="tr-agent-stats-row-4">';
+        html += '<div id="phxStats"></div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div class="tr-agent-sec">';
+        html += '<div class="tr-agent-sec-hdr"><span>Budget</span><div class="tr-agent-sec-line"></div></div>';
+        html += '<div class="tr-agent-sec-body" style="padding:8px 12px">';
+        html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">';
+        html += '<select id="phxBudgetMode" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:10px;outline:none">';
         html += '<option value="pct">% от баланса</option><option value="fixed">$ фикс</option></select></div>';
-        html += '<div class="tr-strat-setting"><label>Бюджет %</label><input id="phxBudgetPct" type="number" value="5" min="1" max="100"></div>';
-        html += '<div class="tr-strat-setting"><label>Бюджет $</label><input id="phxBudgetFixed" type="number" value="15" min="0.5" step="0.5" style="display:none"></div>';
-        html += '</div>';
-        html += '<div class="tr-strat-settings"><div class="tr-strat-setting" style="flex-direction:row;gap:8px;align-items:center">';
-        html += '<label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer"><input type="checkbox" id="phxStopEnabled"> Stop Loss</label>';
-        html += '<input id="phxStopPct" type="number" value="30" min="1" max="99" style="width:50px;padding:4px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none">';
-        html += '<span style="font-size:9px;color:var(--text-tertiary)">% от fill</span></div></div>';
-        html += '<div class="tr-strat-stats">';
-        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Сделок</span><span class="tr-strat-stat-val" id="phxStatTrades">0</span></div>';
-        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">Винрейт</span><span class="tr-strat-stat-val" id="phxStatWinrate">0%</span></div>';
-        html += '<div class="tr-strat-stat"><span class="tr-strat-stat-label">PnL</span><span class="tr-strat-stat-val" id="phxStatPnl">$0.00</span></div>';
-        html += '</div>';
-        html += '<div class="tr-strat-section"><div class="tr-strat-section-hdr"><span>Раунды</span>';
-        html += '<button class="tr-strat-section-btn" id="phxRoundsClear">Очистить</button></div>';
-        html += '<div class="tr-strat-rounds" id="phxRounds"><div class="tr-strat-empty">Нет завершённых раундов</div></div></div>';
-        html += '</div>';
-        html += '</div>';
-
-        html += '<div id="trStrategiesTabMy" style="display:none">';
-        html += '<div class="tr-strat-empty" style="padding:40px 20px;text-align:center;font-size:11px;color:var(--text-tertiary)">Скоро</div>';
-        html += '</div>';
-
+        html += '<div id="phxBudgetPctWrap" style="display:flex;gap:6px;align-items:center">';
+        html += '<span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap">%</span>';
+        html += '<input id="phxBudgetPct" type="number" value="5" min="1" max="100" step="1" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none"></div>';
+        html += '<div id="phxBudgetFixedWrap" style="display:none;gap:6px;align-items:center">';
+        html += '<span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap">$</span>';
+        html += '<input id="phxBudgetFixed" type="number" value="15" min="0.5" step="0.5" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none"></div>';
         html += '</div></div>';
+        html += '<div class="tr-agent-sec">';
+        html += '<div class="tr-agent-sec-hdr"><span>Stop Loss</span><div class="tr-agent-sec-line"></div></div>';
+        html += '<div class="tr-agent-sec-body" style="padding:8px 12px;display:flex;gap:8px;align-items:center">';
+        html += '<label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer;white-space:nowrap">';
+        html += '<input type="checkbox" id="phxStopEnabled"> Enabled</label>';
+        html += '<span style="font-size:10px;color:var(--text-tertiary)">at</span>';
+        html += '<input id="phxStopPct" type="number" value="30" min="1" max="99" step="1" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none">';
+        html += '<span style="font-size:9px;color:var(--text-tertiary)">% of fill</span></div></div>';
+        html += '<div class="tr-agent-sec">';
+        html += '<div class="tr-agent-sec-hdr"><span>Rounds</span><div class="tr-agent-sec-line"></div>';
+        html += '<div class="tr-agent-sec-acts">';
+        html += '<button class="tr-agent-btn" id="phxRoundsClear">Clear All</button>';
+        html += '<button class="tr-agent-btn" id="phxRoundsCopy">Copy</button>';
+        html += '</div></div>';
+        html += '<div class="tr-bot-rounds" id="phxRounds"><div class="tr-bot-rounds-empty">Нет завершённых раундов</div></div>';
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '<div id="trStrategiesTabMy" style="display:none">';
+        html += '<div class="tr-bot-empty" style="padding:40px 20px;text-align:center;font-size:11px;color:var(--text-tertiary)">Скоро</div>';
+        html += '</div>';
+        html += '</div></div>';
+        html += '</div>';
+        html += '<div class="tr-modal-overlay" id="trStrategyModal" style="display:none">';
+        html += '<div class="tr-modal tr-modal-strategy">';
+        html += '<div class="tr-modal-header">';
+        html += '<span id="trStrategyModalTitle">CLOB Arbitrage</span>';
+        html += '<button class="tr-modal-close" id="trStrategyModalClose">&times;</button>';
+        html += '</div>';
+        html += '<div class="tr-modal-body">';
+        html += '<div class="tr-strategy-modal-desc" id="trStrategyModalDesc"></div>';
+        html += '</div></div></div>';
 
         html += '</div>';
         return html;
@@ -2304,14 +2402,14 @@
     function _botRenderLog(b) {
         var el = $('trBotLog');
         if (!el) return;
-        if (!b.logs || b.logs.length === 0) { el.innerHTML = '<div class="tr-strat-empty">Нет операций</div>'; return; }
+        if (!b.logs || b.logs.length === 0) { el.innerHTML = '<div class="tr-bot-empty">Нет операций</div>'; return; }
         var html = '';
         for (var i = b.logs.length - 1; i >= 0 && i >= b.logs.length - 50; i--) {
             var l = b.logs[i];
             var t = new Date(l.time);
             var ts = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0') + ':' + t.getSeconds().toString().padStart(2,'0');
             var cls = l.msg.indexOf('+$') >= 0 || l.msg.indexOf('TARGET') >= 0 ? 'positive' : (l.msg.indexOf('-$') >= 0 || l.msg.indexOf('STOP') >= 0 || l.msg.indexOf('EXPIRED') >= 0 ? 'negative' : '');
-            html += '<div class="tr-strat-log-entry ' + cls + '"><span class="tr-strat-log-time">' + ts + '</span><span class="tr-strat-log-msg">' + escHtml(l.msg) + '</span></div>';
+            html += '<div class="tr-bot-log-entry"><span class="tr-bot-log-ts">' + ts + '</span><span class="tr-bot-log-' + (cls === 'positive' ? 'trade' : cls === 'negative' ? 'error' : 'info') + '">' + escHtml(l.msg) + '</span></div>';
         }
         el.innerHTML = html;
     }
@@ -2320,16 +2418,18 @@
         var el = b === _getClobBot() ? $('trBotRounds') : $('phxRounds');
         var clearBtn = b === _getClobBot() ? $('trBotRoundsClear') : $('phxRoundsClear');
         if (!el) return;
-        if (!b.rounds || b.rounds.length === 0) { el.innerHTML = '<div class="tr-strat-empty">Нет завершённых раундов</div>'; if (clearBtn) clearBtn.style.display = 'none'; return; }
+        if (!b.rounds || b.rounds.length === 0) { el.innerHTML = '<div class="tr-bot-rounds-empty">Нет завершённых раундов</div>'; if (clearBtn) clearBtn.style.display = 'none'; return; }
         if (clearBtn) clearBtn.style.display = '';
-        var html = '';
+        var html = '<div class="tr-bot-rounds-tbl"><div class="tr-bot-rounds-tr tr-bot-rounds-th"><span></span><span>#</span><span>Время</span><span>Sym</span><span class="tr-bot-rounds-pnl">PnL</span></div>';
         for (var i = b.rounds.length - 1; i >= 0 && i >= b.rounds.length - 30; i--) {
             var r = b.rounds[i];
             var t = new Date(r.time);
             var ts = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0');
-            var pnlCls = r.pnl >= 0 ? 'positive' : 'negative';
-            html += '<div class="tr-strat-round"><span class="tr-strat-round-num">#' + r.num + '</span><span class="tr-strat-round-sym">' + (r.sym || '') + '</span><span class="tr-strat-round-pnl ' + pnlCls + '">' + (r.pnl >= 0 ? '+' : '') + '$' + r.pnl.toFixed(2) + '</span><span class="tr-strat-round-time">' + ts + '</span></div>';
+            var pc = r.pnl >= 0 ? 'tr-bot-rounds-grn' : 'tr-bot-rounds-red';
+            var ps = (r.pnl >= 0 ? '+' : '') + '$' + r.pnl.toFixed(2);
+            html += '<div class="tr-bot-rounds-tr"><span></span><span>' + r.num + '</span><span>' + ts + '</span><span>' + (r.sym || '') + '</span><span class="tr-bot-rounds-pnl ' + pc + '">' + ps + '</span></div>';
         }
+        html += '</div>';
         el.innerHTML = html;
     }
 
@@ -2387,8 +2487,10 @@
         if (_stratInited) { _stratRenderStats(); _stratRenderStartBtn(); return; }
         _stratInited = true;
 
-        // Read saved settings
         var b = _getClobBot();
+        var pb = _getPhxBot();
+
+        // Read saved CLOB settings
         var balInp = $('trBotBalInput');
         var spreadInp = $('trClobMinSpread');
         var rebateInp = $('trClobRebate');
@@ -2402,44 +2504,49 @@
         if (timeoutInp) timeoutInp.value = b.timeout;
         if (gasInp) gasInp.value = b.gasCost;
 
-        var pb = _getPhxBot();
+        // Read saved Phoenix settings
         var pBalInp = $('phxBalInput');
         var pEntryInp = $('phxEntryCents');
         var pTargetInp = $('phxTargetCents');
         var pBudgetMode = $('phxBudgetMode');
         var pBudgetPct = $('phxBudgetPct');
         var pBudgetFixed = $('phxBudgetFixed');
+        var pBudgetPctWrap = $('phxBudgetPctWrap');
+        var pBudgetFixedWrap = $('phxBudgetFixedWrap');
         var pStopEnabled = $('phxStopEnabled');
         var pStopPct = $('phxStopPct');
         if (pBalInp) pBalInp.value = pb.balance;
         if (pEntryInp) pEntryInp.value = pb.entryCents;
         if (pTargetInp) pTargetInp.value = pb.targetCents;
-        if (pBudgetMode) pBudgetMode.value = pb.budgetMode;
+        if (pBudgetMode) pBudgetMode.value = pb.budgetMode || 'pct';
         if (pBudgetPct) pBudgetPct.value = pb.budgetPct;
         if (pBudgetFixed) pBudgetFixed.value = pb.budgetFixed;
         if (pStopEnabled) pStopEnabled.checked = pb.stopEnabled;
         if (pStopPct) pStopPct.value = pb.stopPct;
-        if (pBudgetFixed) pBudgetFixed.style.display = pb.budgetMode === 'fixed' ? '' : 'none';
-        if (pBudgetPct) pBudgetPct.style.display = pb.budgetMode === 'pct' ? '' : 'none';
+        if (pBudgetPctWrap) pBudgetPctWrap.style.display = (pb.budgetMode || 'pct') === 'pct' ? 'flex' : 'none';
+        if (pBudgetFixedWrap) pBudgetFixedWrap.style.display = (pb.budgetMode || 'pct') === 'fixed' ? 'flex' : 'none';
 
-        // Strategy tabs
+        // Strategy tabs switching
         document.querySelectorAll('.tr-strategies-tab').forEach(function(tab) {
-            tab.addEventListener('click', function() {
+            tab.onclick = function() {
                 document.querySelectorAll('.tr-strategies-tab').forEach(function(t) { t.classList.remove('active'); });
                 tab.classList.add('active');
+                var tName = tab.dataset.strategyTab;
                 var aiTab = $('trStrategiesTabAI');
                 var myTab = $('trStrategiesTabMy');
-                if (aiTab) aiTab.style.display = tab.dataset.strategyTab === 'ai' ? '' : 'none';
-                if (myTab) myTab.style.display = tab.dataset.strategyTab === 'my' ? '' : 'none';
-            });
+                if (aiTab) aiTab.style.display = tName === 'ai' ? '' : 'none';
+                if (myTab) myTab.style.display = tName === 'my' ? '' : 'none';
+            };
         });
 
         // Strategy option switching
-        document.querySelectorAll('.tr-strat-opt').forEach(function(opt) {
-            opt.addEventListener('click', function() {
-                document.querySelectorAll('.tr-strat-opt').forEach(function(o) { o.classList.remove('active'); });
+        document.querySelectorAll('.tr-strategy-opt').forEach(function(opt) {
+            opt.onclick = function(e) {
+                if (e.target.closest('.tr-strategy-info-btn')) return;
+                document.querySelectorAll('.tr-strategy-opt').forEach(function(o) { o.classList.remove('active'); });
                 opt.classList.add('active');
                 _tradeStrategy = opt.dataset.strategy;
+                try { localStorage.setItem('polyBotStrategy', _tradeStrategy); } catch(e) {}
                 var cc = $('trBotClobContent');
                 var dc = $('trBotDeltaContent');
                 var pc = $('trBotPhoenixContent');
@@ -2448,75 +2555,180 @@
                 if (pc) pc.style.display = _tradeStrategy === 'phoenix' ? '' : 'none';
                 _stratRenderStartBtn();
                 _stratRenderStats();
-            });
+            };
         });
+
+        // Strategy info buttons
+        document.querySelectorAll('.tr-strategy-info-btn').forEach(function(btn) {
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                var strategy = btn.dataset.strategy;
+                var modal = $('trStrategyModal');
+                var title = $('trStrategyModalTitle');
+                var desc = $('trStrategyModalDesc');
+                if (!modal || !title || !desc) return;
+                var stratNames = { clob: 'CLOB Arbitrage', delta: 'Delta Mesh', phoenix: 'Phoenix' };
+                var stratDescs = {
+                    clob: 'Структурный арбитраж / маркетмейкинг на Polymarket.\n\nБот подключается к CLOB WebSocket и получает реальные цены bid/ask. Когда spread (ask - bid) превышает порог, выставляются лимитные ордера на покупку YES и NO по bid, затем продажа по ask.\n\nПрибыль = (ask - bid) \u00d7 объём + до 20% rebate от Polymarket.\n\nРекомендуемый депозит: от $500. Работает на всех рынках Polymarket.',
+                    delta: 'Система анализирует мгновенный тренд (скорость и силу движения), сравнивает текущую ситуацию с историческими паттернами и рассчитывает уровень уверенности для каждой потенциальной сделки.\n\nРекомендуемый депозит: от $100 ($500 ideally).\n\nСкоро.',
+                    phoenix: 'Стратегия скальпинга на экстремальных ценах: выставляет лимитные заявки на 2-5\u00a2 по обеим сторонам и фиксирует прибыль при отскоке до целевого уровня.\n\nРекомендуемый депозит: от $100 ($500 ideally). Работает на всех крипто-рынках с таймфреймом 5m.\n\nБез накопления, без угадывания направления \u2014 чистый скалп.'
+                };
+                title.textContent = stratNames[strategy] || 'CLOB Arbitrage';
+                desc.textContent = stratDescs[strategy] || '';
+                modal.style.display = 'flex';
+            };
+        });
+
+        // Strategy modal close
+        var smClose = $('trStrategyModalClose');
+        if (smClose) smClose.onclick = function() { var m = $('trStrategyModal'); if (m) m.style.display = 'none'; };
+        var smOverlay = $('trStrategyModal');
+        if (smOverlay) smOverlay.onclick = function(e) { if (e.target === smOverlay) smOverlay.style.display = 'none'; };
 
         // Start/Stop button
         var startBtn = $('trBotStartBtn');
-        if (startBtn) startBtn.addEventListener('click', function() {
-            if (_tradeStrategy === 'clob') {
-                _getClobBot().running ? _clobStop() : _clobStart();
-            } else if (_tradeStrategy === 'phoenix') {
-                _getPhxBot().running ? _phxStop() : _phxStart();
-            }
-        });
+        if (startBtn) {
+            startBtn.onclick = function() {
+                if (_tradeStrategy === 'delta') return;
+                if (_tradeStrategy === 'phoenix') {
+                    _getPhxBot().running ? _phxStop() : _phxStart();
+                } else {
+                    _getClobBot().running ? _clobStop() : _clobStart();
+                }
+                _stratRenderStartBtn();
+            };
+        }
 
         // Asset buttons (CLOB)
-        document.querySelectorAll('#trBotAssetBtns .tr-strat-asset-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                btn.classList.toggle('active');
-                var assets = [];
-                document.querySelectorAll('#trBotAssetBtns .tr-strat-asset-btn.active').forEach(function(b) { assets.push(b.dataset.asset); });
-                _getClobBot().selectedAssets = assets.length > 0 ? assets : ['BTC'];
-                _saveClobBot();
+        var assetBtns = $('trBotAssetBtns');
+        if (assetBtns) {
+            assetBtns.querySelectorAll('.tr-agent-asset-btn').forEach(function(ab) {
+                ab.onclick = function() {
+                    if (_getClobBot().running) return;
+                    this.classList.toggle('active');
+                    var selected = [];
+                    assetBtns.querySelectorAll('.tr-agent-asset-btn.active').forEach(function(a) { selected.push(a.dataset.asset); });
+                    _getClobBot().selectedAssets = selected.length > 0 ? selected : ['BTC', 'ETH', 'SOL'];
+                    if (!selected.length) { assetBtns.querySelectorAll('.tr-agent-asset-btn').forEach(function(a) { a.classList.add('active'); }); }
+                    _saveClobBot();
+                };
             });
-        });
+        }
 
         // Asset buttons (Phoenix)
-        document.querySelectorAll('#phxAssetBtns .tr-strat-asset-btn').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                btn.classList.toggle('active');
-                var assets = [];
-                document.querySelectorAll('#phxAssetBtns .tr-strat-asset-btn.active').forEach(function(b) { assets.push(b.dataset.asset); });
-                _getPhxBot().selectedAssets = assets.length > 0 ? assets : ['BTC'];
-                _savePhxBot();
+        var phxAssetBtns = $('phxAssetBtns');
+        if (phxAssetBtns) {
+            phxAssetBtns.querySelectorAll('.tr-agent-asset-btn').forEach(function(ab) {
+                ab.onclick = function() {
+                    if (_getPhxBot().running) return;
+                    this.classList.toggle('active');
+                    var selected = [];
+                    phxAssetBtns.querySelectorAll('.tr-agent-asset-btn.active').forEach(function(a) { selected.push(a.dataset.asset); });
+                    _getPhxBot().selectedAssets = selected.length > 0 ? selected : ['BTC', 'ETH', 'SOL'];
+                    if (!selected.length) { phxAssetBtns.querySelectorAll('.tr-agent-asset-btn').forEach(function(a) { a.classList.add('active'); }); }
+                    _savePhxBot();
+                };
             });
-        });
+        }
 
-        // CLOB settings change handlers
-        if (balInp) balInp.addEventListener('change', function() { _getClobBot().balance = parseFloat(balInp.value) || 100000; _saveClobBot(); });
-        if (spreadInp) spreadInp.addEventListener('change', function() { _getClobBot().minSpread = parseFloat(spreadInp.value) || 2; _saveClobBot(); });
-        if (rebateInp) rebateInp.addEventListener('change', function() { _getClobBot().rebate = parseFloat(rebateInp.value) || 20; _saveClobBot(); });
-        if (sizeInp) sizeInp.addEventListener('change', function() { _getClobBot().orderSize = parseFloat(sizeInp.value) || 100; _saveClobBot(); });
-        if (timeoutInp) timeoutInp.addEventListener('change', function() { _getClobBot().timeout = parseInt(timeoutInp.value) || 3; _saveClobBot(); });
-        if (gasInp) gasInp.addEventListener('change', function() { _getClobBot().gasCost = parseFloat(gasInp.value) || 0.02; _saveClobBot(); });
+        // CLOB settings handlers
+        if (balInp) balInp.oninput = function() { if (!_getClobBot().running) { _getClobBot().balance = parseFloat(this.value) || 100000; _saveClobBot(); } };
+        if (spreadInp) spreadInp.oninput = function() { _getClobBot().minSpread = parseFloat(this.value) || 2; _saveClobBot(); };
+        if (rebateInp) rebateInp.oninput = function() { _getClobBot().rebate = parseFloat(this.value) || 20; _saveClobBot(); };
+        if (sizeInp) sizeInp.oninput = function() { _getClobBot().orderSize = parseFloat(this.value) || 100; _saveClobBot(); };
+        if (timeoutInp) timeoutInp.oninput = function() { _getClobBot().timeout = parseInt(this.value) || 3; _saveClobBot(); };
+        if (gasInp) gasInp.oninput = function() { _getClobBot().gasCost = parseFloat(this.value) || 0.02; _saveClobBot(); };
 
-        // Phoenix settings change handlers
-        if (pBalInp) pBalInp.addEventListener('change', function() { _getPhxBot().balance = parseFloat(pBalInp.value) || 1000; _savePhxBot(); });
-        if (pEntryInp) pEntryInp.addEventListener('change', function() { _getPhxBot().entryCents = parseInt(pEntryInp.value) || 2; _savePhxBot(); });
-        if (pTargetInp) pTargetInp.addEventListener('change', function() { _getPhxBot().targetCents = parseInt(pTargetInp.value) || 20; _savePhxBot(); });
-        if (pBudgetMode) pBudgetMode.addEventListener('change', function() {
-            _getPhxBot().budgetMode = pBudgetMode.value; _savePhxBot();
-            if (pBudgetPct) pBudgetPct.style.display = pBudgetMode.value === 'pct' ? '' : 'none';
-            if (pBudgetFixed) pBudgetFixed.style.display = pBudgetMode.value === 'fixed' ? '' : 'none';
-        });
-        if (pBudgetPct) pBudgetPct.addEventListener('change', function() { _getPhxBot().budgetPct = parseFloat(pBudgetPct.value) || 5; _savePhxBot(); });
-        if (pBudgetFixed) pBudgetFixed.addEventListener('change', function() { _getPhxBot().budgetFixed = parseFloat(pBudgetFixed.value) || 15; _savePhxBot(); });
-        if (pStopEnabled) pStopEnabled.addEventListener('change', function() { _getPhxBot().stopEnabled = pStopEnabled.checked; _savePhxBot(); });
-        if (pStopPct) pStopPct.addEventListener('change', function() { _getPhxBot().stopPct = parseInt(pStopPct.value) || 30; _savePhxBot(); });
+        // Phoenix settings handlers
+        if (pBalInp) {
+            pBalInp.oninput = function() { if (!_getPhxBot().running) { var v = parseFloat(this.value); if (v > 0) { _getPhxBot().balance = v; _getPhxBot().startBalance = v; } } };
+            pBalInp.onchange = function() { if (!_getPhxBot().running) { var v = parseFloat(this.value); if (v > 0) { _getPhxBot().balance = v; _getPhxBot().startBalance = v; _savePhxBot(); } } };
+        }
+        if (pEntryInp) {
+            pEntryInp.oninput = function() { if (!_getPhxBot().running) _getPhxBot().entryCents = Math.max(1, Math.min(50, parseInt(this.value) || 2)); };
+            pEntryInp.onchange = function() { if (!_getPhxBot().running) { _getPhxBot().entryCents = Math.max(1, Math.min(50, parseInt(this.value) || 2)); _savePhxBot(); } };
+        }
+        if (pTargetInp) {
+            pTargetInp.oninput = function() { if (!_getPhxBot().running) _getPhxBot().targetCents = Math.max(5, Math.min(50, parseInt(this.value) || 20)); };
+            pTargetInp.onchange = function() { if (!_getPhxBot().running) { _getPhxBot().targetCents = Math.max(5, Math.min(50, parseInt(this.value) || 20)); _savePhxBot(); } };
+        }
+        if (pBudgetMode) {
+            pBudgetMode.onchange = function() {
+                if (_getPhxBot().running) return;
+                _getPhxBot().budgetMode = this.value;
+                if (pBudgetPctWrap) pBudgetPctWrap.style.display = this.value === 'pct' ? 'flex' : 'none';
+                if (pBudgetFixedWrap) pBudgetFixedWrap.style.display = this.value === 'fixed' ? 'flex' : 'none';
+                _savePhxBot();
+            };
+        }
+        if (pBudgetPct) {
+            pBudgetPct.oninput = function() { if (!_getPhxBot().running) _getPhxBot().budgetPct = parseFloat(this.value) || 5; };
+            pBudgetPct.onchange = function() { if (!_getPhxBot().running) _savePhxBot(); };
+        }
+        if (pBudgetFixed) {
+            pBudgetFixed.oninput = function() { if (!_getPhxBot().running) _getPhxBot().budgetFixed = parseFloat(this.value) || 15; };
+            pBudgetFixed.onchange = function() { if (!_getPhxBot().running) _savePhxBot(); };
+        }
+        if (pStopEnabled) pStopEnabled.onchange = function() { _getPhxBot().stopEnabled = this.checked; _savePhxBot(); };
+        if (pStopPct) pStopPct.oninput = function() { _getPhxBot().stopPct = parseInt(this.value) || 30; };
+
+        // Rolling toggle
+        var rollingToggle = $('trBotRollingToggle');
+        if (rollingToggle) {
+            var rollingBtns = rollingToggle.querySelectorAll('.tr-agent-rolling-btn');
+            rollingBtns.forEach(function(rb) {
+                rb.onclick = function() {
+                    if (_getClobBot().running) return;
+                    rollingBtns.forEach(function(bb) { bb.classList.remove('active'); });
+                    rb.classList.add('active');
+                    try { localStorage.setItem('polyBotRolling', rb.dataset.rolling); } catch(e) {}
+                };
+            });
+        }
 
         // History toggle
         var histToggle = $('trBotHistToggle');
-        if (histToggle) histToggle.addEventListener('click', function() {
-            var body = $('trBotHistBody');
-            if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+        if (histToggle) {
+            histToggle.onclick = function() {
+                var body = $('trBotHistBody');
+                if (body) {
+                    var isCollapsed = body.classList.contains('collapsed');
+                    if (isCollapsed) { body.classList.remove('collapsed'); body.style.display = ''; histToggle.classList.remove('collapsed'); }
+                    else { body.classList.add('collapsed'); body.style.display = 'none'; histToggle.classList.add('collapsed'); }
+                }
+            };
+        }
+
+        // History filters
+        document.querySelectorAll('.tr-bot-hist-filter').forEach(function(f) {
+            f.onclick = function() {
+                document.querySelectorAll('.tr-bot-hist-filter').forEach(function(ff) { ff.classList.remove('active'); });
+                f.classList.add('active');
+                _botRenderLog(_getClobBot());
+            };
         });
 
         // Clear rounds
         var clearClob = $('trBotRoundsClear');
-        if (clearClob) clearClob.addEventListener('click', function() { _getClobBot().rounds = []; _saveClobBot(); _botRenderRounds(_getClobBot()); });
+        if (clearClob) clearClob.onclick = function() { _getClobBot().rounds = []; _saveClobBot(); _botRenderRounds(_getClobBot()); };
         var clearPhx = $('phxRoundsClear');
-        if (clearPhx) clearPhx.addEventListener('click', function() { _getPhxBot().rounds = []; _savePhxBot(); _botRenderRounds(_getPhxBot()); });
+        if (clearPhx) clearPhx.onclick = function() { _getPhxBot().rounds = []; _savePhxBot(); _botRenderRounds(_getPhxBot()); };
+
+        // Copy history
+        var copyBtn = $('trBotCopyBtn');
+        if (copyBtn) {
+            copyBtn.onclick = function(e) {
+                e.stopPropagation();
+                var logs = _getClobBot().logs || [];
+                var lines = logs.map(function(l) {
+                    var t = new Date(l.time);
+                    return '[' + t.toLocaleTimeString() + '] ' + l.msg;
+                });
+                if (lines.length > 0) {
+                    try { navigator.clipboard.writeText(lines.join('\n')); } catch(e) {}
+                }
+            };
+        }
 
         _stratRenderStats();
         _stratRenderStartBtn();
