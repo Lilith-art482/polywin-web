@@ -124,6 +124,43 @@
         );
     }
 
+    // ===== Theme Hook =====
+
+    function useTheme() {
+        var _a = React.useState(function() {
+            return document.body.classList.contains('light-theme') ? 'light' : 'dark';
+        });
+        var theme = _a[0]; var setTheme = _a[1];
+
+        React.useEffect(function() {
+            var observer = new MutationObserver(function() {
+                setTheme(document.body.classList.contains('light-theme') ? 'light' : 'dark');
+            });
+            observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            return function() { observer.disconnect(); };
+        }, []);
+
+        var isLight = theme === 'light';
+        return {
+            theme: theme,
+            vars: {
+                '--tp-bg': isLight ? '#FFFFFF' : '#0B0E14',
+                '--tp-bg-card': isLight ? '#F8F9FA' : '#14181F',
+                '--tp-bg-input': isLight ? '#FFFFFF' : '#1A1F2B',
+                '--tp-bg-hover': isLight ? '#F0F1F3' : '#1C2030',
+                '--tp-border': isLight ? '#E0E2E7' : '#23273A',
+                '--tp-text': isLight ? '#1A1A2E' : '#FFFFFF',
+                '--tp-text-sec': isLight ? '#6B7280' : '#737B8D',
+                '--tp-text-dim': isLight ? '#9CA3AF' : '#505767',
+                '--tp-buy': '#00D4AA',
+                '--tp-buy-bg': isLight ? 'rgba(0,212,170,0.08)' : 'rgba(0,212,170,0.1)',
+                '--tp-sell': '#FF3B6F',
+                '--tp-sell-bg': isLight ? 'rgba(255,59,111,0.08)' : 'rgba(255,59,111,0.1)',
+                '--tp-radius': '12px'
+            }
+        };
+    }
+
     // ===== Main Component =====
 
     function TradingPanel(props) {
@@ -131,6 +168,8 @@
         var outcomes = eventData.outcomes || [];
         var balance = eventData.currentUserBalance || 0;
         var tickSize = eventData.tickSize || 0.01;
+
+        var themeData = useTheme();
 
         var _a = React.useState('buy');
         var side = _a[0]; var setSide = _a[1];
@@ -239,7 +278,7 @@
 
         // Success state
         if (status === 'success') {
-            return h('div', { className: 'tp-panel ' + accentClass },
+            return h('div', { className: 'tp-panel ' + accentClass, style: themeData.vars },
                 h('div', { className: 'tp-success' },
                     h('div', { className: 'tp-success-icon' }, '✓'),
                     h('div', { className: 'tp-success-title' }, isBuy ? 'Ордер размещён' : 'Продажа выполнена'),
@@ -252,7 +291,7 @@
             );
         }
 
-        return h('div', { className: 'tp-panel ' + accentClass },
+        return h('div', { className: 'tp-panel ' + accentClass, style: themeData.vars },
             // Header
             h('div', { className: 'tp-header' },
                 h('div', { className: 'tp-question' }, eventData.question || '—'),

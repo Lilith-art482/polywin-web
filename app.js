@@ -970,7 +970,10 @@
 
         setupBacktest();
         renderTradeWallets();
-        setTimeout(initCopyPanel, 100);
+        setTimeout(function() {
+            initCopyPanel();
+            mountTradingPanelOnMarket();
+        }, 100);
     }
 
     var CRYPTO_SYMBOLS = {
@@ -1274,36 +1277,7 @@
     function selectMarket(market, ev) {
         _selectedMarket = market;
         if (ev) _selectedEvent = ev;
-
-        var container = $('ttSelectedMarket');
-        if (!container) return;
-
-        // Build eventData for React component
-        var prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : [];
-        var yesPrice = prices[0] ? parseFloat(prices[0]) : null;
-        var noPrice = prices[1] ? parseFloat(prices[1]) : null;
-
-        var eventData = {
-            eventId: market.conditionId || market.id || '',
-            question: market.question || (ev ? ev.title : '') || '',
-            outcomes: [
-                { id: 'yes', label: 'Да', price: yesPrice, volume: 0 },
-                { id: 'no', label: 'Нет', price: noPrice, volume: 0 }
-            ],
-            currentUserBalance: _demoBalance,
-            marketType: 'binary',
-            timeRemaining: market.endDate
-                ? calcTimeRemaining(market.endDate)
-                : '',
-            tickSize: 0.01
-        };
-
-        if (window.mountTradingPanel) {
-            container.innerHTML = '';
-            window.mountTradingPanel('ttSelectedMarket', eventData, function(order) {
-                handleReactOrder(order);
-            });
-        }
+        mountTradingPanelOnMarket();
     }
 
     function calcTimeRemaining(dateStr) {
@@ -1355,6 +1329,7 @@
         localStorage.setItem('polyDemoPositions', JSON.stringify(_demoPositions));
 
         updateDemoBalanceDisplay();
+        mountTradingPanelOnMarket();
         var label = order.side === 'buy' ? 'Покупка' : 'Продажа';
         showMsg(label + ': ' + order.outcomeId.toUpperCase() + ' на $' + fmt(amount) + ' (' + shares.toFixed(1) + ' акций)', true);
     }
@@ -1364,8 +1339,7 @@
     }
 
     function updateDemoBalanceDisplay() {
-        var el = $('demoBalance');
-        if (el) el.textContent = '$' + fmtNum(_demoBalance.toFixed(2));
+        mountTradingPanelOnMarket();
     }
 
     function renderTradeTerminal() {
@@ -1378,25 +1352,14 @@
         html += '</div>';
 
         html += '<div class="tr-panel" id="trDemoPanel">';
-        html += '<div style="padding:14px">';
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
-        html += '<span style="font-size:12px;font-weight:700;color:var(--text)">Демо-счёт</span>';
-        html += '<span style="font-size:16px;font-weight:800;color:var(--accent)" id="demoBalance">$100,000.00</span>';
+        html += '<div id="tpReactMount"></div>';
         html += '</div>';
-        html += '<div class="backtest-section"><div class="bt-header"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>Backtest симулятор</div>';
-        html += '<div class="bt-body">';
-        html += '<div class="bt-input-group"><div class="bt-input-label">Сумма инвестиции</div>';
-        html += '<div class="bt-input-row"><div class="bt-input-wrap"><span class="bt-input-prefix">$</span><input type="number" id="btAmount" value="1000" step="100" min="10"></div>';
-        html += '<button class="bt-calc-btn" id="btCalcBtn">Рассчитать</button></div>';
-        html += '<div class="bt-quick-amounts"><button class="bt-qty-btn" data-v="100">$100</button><button class="bt-qty-btn" data-v="500">$500</button><button class="bt-qty-btn" data-v="1000">$1K</button><button class="bt-qty-btn" data-v="5000">$5K</button><button class="bt-qty-btn" data-v="10000">$10K</button></div>';
-        html += '</div>';
-        html += '<div class="bt-results" id="btResults" style="display:none"></div>';
-        html += '</div></div>';
-        html += '</div></div>';
 
         html += '<div class="tr-panel" id="trLivePanel" style="display:none">';
-        html += '<div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:11px">';
-        html += '<p>Live-торговля требует подключения кошелька</p>';
+        html += '<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:11px">';
+        html += '<svg viewBox="0 0 24 24" width="32" height="32" style="opacity:0.3;margin-bottom:8px"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>';
+        html += '<p>Live-торговля</p>';
+        html += '<p style="margin-top:4px;font-size:10px;opacity:0.6">Требуется подключение кошелька</p>';
         html += '</div></div>';
 
         html += '<div class="tr-panel" id="trCopyPanel" style="display:none">';
@@ -1410,6 +1373,39 @@
 
         html += '</div>';
         return html;
+    }
+
+    function mountTradingPanelOnMarket() {
+        var mountEl = $('tpReactMount');
+        if (!mountEl || !window.mountTradingPanel) return;
+        if (!_selectedMarket) {
+            mountEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:11px">Выберите событие слева</div>';
+            return;
+        }
+
+        var market = _selectedMarket;
+        var ev = _selectedEvent;
+        var prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : [];
+        var yesPrice = prices[0] ? parseFloat(prices[0]) : null;
+        var noPrice = prices[1] ? parseFloat(prices[1]) : null;
+
+        var eventData = {
+            eventId: market.conditionId || market.id || '',
+            question: market.question || (ev ? ev.title : '') || '',
+            outcomes: [
+                { id: 'yes', label: 'Да', price: yesPrice, volume: 0 },
+                { id: 'no', label: 'Нет', price: noPrice, volume: 0 }
+            ],
+            currentUserBalance: _demoBalance,
+            marketType: 'binary',
+            timeRemaining: market.endDate ? calcTimeRemaining(market.endDate) : '',
+            tickSize: 0.01
+        };
+
+        mountEl.innerHTML = '';
+        window.mountTradingPanel(mountEl, eventData, function(order) {
+            handleReactOrder(order);
+        });
     }
 
     function renderTradeWallets() {
