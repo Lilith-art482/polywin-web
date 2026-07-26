@@ -711,21 +711,6 @@
         _tvCurrentInterval = interval;
     }
 
-    function _setupSourceBar() {
-        var srcBar = $('tvSourceBar');
-        if (!srcBar) return;
-        srcBar.addEventListener('click', function(e) {
-            var btn = e.target.closest('.tv-chart-src');
-            if (!btn) return;
-            var src = btn.getAttribute('data-src');
-            if (src === _tvCurrentSource) return;
-            srcBar.querySelectorAll('.tv-chart-src').forEach(function(b) { b.classList.remove('active'); });
-            btn.classList.add('active');
-            _tvCurrentSource = src;
-            loadTVChart('tvTradeChart', _tvCurrentSymbol, _tvCurrentInterval, src);
-        });
-    }
-
     function reloadTVChart() {
         var container = $('tvTradeChart');
         if (!container) return;
@@ -1071,10 +1056,6 @@
             +   '</div>'
             +   '<div class="tt-chart-col">'
             +     '<div class="tv-chart-section" id="ttChartSection" style="display:none">'
-            +       '<div class="tv-chart-source-bar" id="tvSourceBar">'
-            +         '<button class="tv-chart-src active" data-src="tv">TradingView</button>'
-            +         '<button class="tv-chart-src" data-src="cl">Chainlink</button>'
-            +       '</div>'
             +       '<div class="tv-chart-container" id="tvTradeChart"></div>'
             +       '<div class="tt-sym-bar" id="ttSymBar"></div>'
             +     '</div>'
@@ -1109,7 +1090,6 @@
 
         setupBacktest();
         renderTradeWallets();
-        _setupSourceBar();
         setTimeout(function() {
             initCopyPanel();
             mountTradingPanelOnMarket();
