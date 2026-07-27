@@ -14,7 +14,9 @@
     let lastResolvedWallet = null;
     let historyFilter = { sign: 'all', min: null, max: null };
     let historySort = 'date-desc';
+    let _feeCache = {};
     let _walletInited = false;
+    let _waRunning = false;
     let _tradeInited = false;
     let _whaleData = [];
     let _aiRequested = {};
@@ -724,31 +726,65 @@
     }
 
     // ====================== POLYMARKET API ======================
+    async function fetchPositions(wallet) {
+        try {
+            var text = await pageFetch(DATA_API + '/v1/positions?user=' + wallet + '&limit=1000');
+            var data = JSON.parse(text);
+            return Array.isArray(data) ? data : (data.positions || data.data || []);
+        } catch (e) { return []; }
+    }
+
+    async function fetchClosedPositions(wallet) {
+        try {
+            var allClosed = [];
+            var limit = 50;
+            for (var offset = 0; offset < 2000; offset += limit) {
+                var text = await pageFetch(DATA_API + '/v1/closed-positions?user=' + wallet + '&limit=' + limit + '&offset=' + offset);
+                var data = JSON.parse(text);
+                var batch = Array.isArray(data) ? data : (data.positions || data.data || []);
+                if (!batch.length) break;
+                allClosed.push.apply(allClosed, batch);
+                if (batch.length < limit) break;
+            }
+            return allClosed;
+        } catch (e) { return []; }
+    }
+
+    async function fetchTrades(wallet) {
+        try {
+            var text = await pageFetch(DATA_API + '/v1/trades?user=' + wallet + '&limit=5000');
+            var data = JSON.parse(text);
+            var trades = Array.isArray(data) ? data : (data.trades || data.data || []);
+            return trades.map(function(t) {
+                var volume = parseFloat(t.notional || t.cost || (t.size * t.avgPrice) || t.size || 0);
+                var pnl = parseFloat(t.pnl || t.profit || 0);
+                return Object.assign({}, t, { volume: volume, pnl: pnl, isWin: pnl >= 0 });
+            });
+        } catch (e) { return []; }
+    }
+
     async function fetchWalletStats(wallet) {
         try {
-            var [positionsText, tradesText] = await Promise.all([
-                pageFetch(DATA_API + '/v1/positions?user=' + wallet + '&limit=1000'),
-                pageFetch(DATA_API + '/v1/trades?user=' + wallet + '&limit=5000')
+            var [positions, closedPositions, trades] = await Promise.all([
+                fetchPositions(wallet),
+                fetchClosedPositions(wallet),
+                fetchTrades(wallet)
             ]);
-            var positions = JSON.parse(positionsText);
-            var allTrades = JSON.parse(tradesText);
-            var closed = (Array.isArray(positions) ? positions : []).filter(function(p) { return p.side && p.size; });
-            var trades = (Array.isArray(allTrades) ? allTrades : []);
 
-            var stats = { totalTrades: trades.length, wins: 0, losses: 0, totalPnl: 0, positions: closed };
-            trades.forEach(function(t) {
-                if (t.pnl) {
-                    var pnl = parseFloat(t.pnl);
-                    stats.totalPnl += pnl;
-                    if (pnl > 0) stats.wins++;
-                    else if (pnl < 0) stats.losses++;
-                }
-            });
-            stats.winRate = stats.totalTrades > 0 ? (stats.wins / stats.totalTrades * 100) : 0;
+            _feeCache = {};
+        var stats = calculateStats(positions, closedPositions, trades, 0, wallet);
+        var resolvedForFees = stats.resolvedPositions;
+            var totalFees = await computePositionFees(resolvedForFees);
+            stats.totalFees = totalFees;
+            var rawResolvedPnl = stats.realizedClosedPnl + stats.redeemablePnl;
+            stats.resolvedPnlBeforeFees = rawResolvedPnl;
+            stats.resolvedPnlAfterFees = rawResolvedPnl - totalFees;
+            stats.netPnl = rawResolvedPnl - totalFees;
+            currentStats = stats;
             return stats;
         } catch(e) {
             console.warn('Fetch wallet stats error:', e);
-            return { totalTrades: 0, wins: 0, losses: 0, totalPnl: 0, winRate: 0, positions: [] };
+            return { totalTrades: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0, positions: [], netPnl: 0, resolvedPnlBeforeFees: 0, resolvedPnlAfterFees: 0 };
         }
     }
 
@@ -886,14 +922,6 @@
     function initWalletTab() {
         if (_walletInited) { updateStats(); return; }
         _walletInited = true;
-        var firstSection = document.querySelector('#wallet-tab .wa-section');
-        if (firstSection) {
-            var chartDiv = document.createElement('div');
-            chartDiv.className = 'tv-chart-section';
-            chartDiv.innerHTML = '<div class="tv-chart-container" id="tvWalletChart" style="height:420px"></div>';
-            firstSection.after(chartDiv);
-            loadTVChart('tvWalletChart');
-        }
 
         var searchInput = $('ws-search-input');
         if (searchInput) {
@@ -940,7 +968,83 @@
             };
         }
 
+        // Stats info modal
+        var infoBtn = $('statsInfoBtn');
+        var overlay = $('statsInfoOverlay');
+        var closeBtn = $('statsInfoClose');
+        if (infoBtn && overlay) {
+            infoBtn.onclick = function() { overlay.style.display = 'flex'; };
+            if (closeBtn) closeBtn.onclick = function() { overlay.style.display = 'none'; };
+            overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.style.display = 'none'; });
+        }
+
+        // Backtest
+        var btBtn = $('bt-calculate');
+        if (btBtn) btBtn.addEventListener('click', runBacktest);
+        var quickBtns = document.querySelectorAll('.bt-qty-btn');
+        quickBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var amount = parseFloat(this.dataset.amount);
+                var input = $('bt-amount');
+                if (input && amount) input.value = amount;
+            });
+        });
+
+        // Sub tabs
+        var activeTab = $('active-tab');
+        var closedTab = $('closed-tab');
+        if (activeTab) {
+            activeTab.addEventListener('click', function() {
+                currentSubTab = 'active';
+                activeTab.classList.add('active');
+                if (closedTab) closedTab.classList.remove('active');
+                if (currentStats) renderHistory(currentStats, $('history-list'));
+            });
+        }
+        if (closedTab) {
+            closedTab.addEventListener('click', function() {
+                currentSubTab = 'closed';
+                closedTab.classList.add('active');
+                if (activeTab) activeTab.classList.remove('active');
+                if (currentStats) renderHistory(currentStats, $('history-list'));
+            });
+        }
+
+        // History filters
+        var filterBtns = document.querySelectorAll('.hf-btn');
+        filterBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var filter = this.dataset.filter;
+                filterBtns.forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                historyFilter.sign = filter;
+                if (currentStats) renderHistory(currentStats, $('history-list'));
+            });
+        });
+
+        // Sort buttons
+        var sortBtns = document.querySelectorAll('.hf-sort');
+        sortBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                historySort = this.dataset.sort;
+                if (currentStats) renderHistory(currentStats, $('history-list'));
+            });
+        });
+
+        // Tracker modal events
+        var addBtn = document.getElementById('addTrackerBtn');
+        if (addBtn) addBtn.addEventListener('click', addCurrentToTracker);
+        var trkClose = document.getElementById('trkModalClose');
+        var trkCancel = document.getElementById('trkCancelBtn');
+        var trkSave = document.getElementById('trkSaveBtn');
+        var trkOverlay = document.getElementById('trkModalOverlay');
+        if (trkClose) trkClose.addEventListener('click', hideTrackerModal);
+        if (trkCancel) trkCancel.addEventListener('click', hideTrackerModal);
+        if (trkSave) trkSave.addEventListener('click', saveTrackerFromModal);
+        if (trkOverlay) trkOverlay.addEventListener('click', function(e) { if (e.target === trkOverlay) hideTrackerModal(); });
+
         updateStats();
+        initWalletAI();
     }
 
     async function doWalletSearch(query) {
@@ -957,9 +1061,6 @@
 
     async function updateStats() {
         var pnlVal = $('pnl-val');
-        var statsGrid = $('statsGrid');
-        var detailsGrid = $('detailsGrid');
-        var strengthCard = $('wallet-strength-card');
 
         var wallet = searchedWallet || lastWallet;
         if (!wallet) {
@@ -977,64 +1078,1019 @@
         var stats = await fetchWalletStats(wallet);
         currentStats = stats;
 
-        if (pnlVal) {
-            var pnl = stats.totalPnl || 0;
-            pnlVal.textContent = (pnl >= 0 ? '+' : '') + '$' + Math.abs(pnl).toFixed(2);
-            pnlVal.className = 'pnl-value ' + (pnl >= 0 ? 'positive' : 'negative');
+        var profileName = $('profile-name');
+        if (profileName) {
+            profileName.innerText = wallet.substring(0, 6) + '...' + (wallet.length > 12 ? wallet.substring(wallet.length - 6) : wallet);
         }
 
-        if (statsGrid) {
-            statsGrid.innerHTML = ''
-                + '<div class="stats-card"><div class="stats-label">Всего сделок</div><div class="stats-value">' + stats.totalTrades + '</div></div>'
-                + '<div class="stats-card"><div class="stats-label">Win Rate</div><div class="stats-value">' + stats.winRate.toFixed(1) + '%</div></div>'
-                + '<div class="stats-card"><div class="stats-label">Прибыльных</div><div class="stats-value positive">' + stats.wins + '</div></div>'
-                + '<div class="stats-card"><div class="stats-label">Убыточных</div><div class="stats-value negative">' + stats.losses + '</div></div>';
-        }
+        updateMainPnl();
+        updateWalletStrength();
 
-        if (detailsGrid) {
-            var totalPnl = stats.totalPnl || 0;
-            detailsGrid.innerHTML = ''
-                + '<div class="detail-card"><div class="stats-label">Общий PNL</div><div class="stats-value ' + (totalPnl >= 0 ? 'positive' : 'negative') + '">' + fmtUSD(totalPnl) + '</div></div>'
-                + '<div class="detail-card"><div class="stats-label">Всего трейдов</div><div class="stats-value">' + stats.totalTrades + '</div></div>'
-                + '<div class="detail-card full-width" style="grid-column:span 2"><div class="stats-label">Активных позиций</div><div class="stats-value">' + (stats.positions ? stats.positions.length : 0) + '</div></div>';
-        }
+        el('total-trades', stats.totalPositions || 0);
+        el('wins-count', stats.totalWins || 0);
+        el('neutral-count', stats.neutralCount || 0);
+        el('loss-count', stats.totalLosses || 0);
+        el('wr-val', (stats.winrate || 0) + '%');
+        el('whale-wr', (stats.whaleWr || 0) + '%');
+        el('whale-count', stats.whaleCount || 0);
+        el('open-pnl', formatCurrency(stats.openPnl));
+        el('active-count', stats.openPositions.length);
+        el('closed-count', stats.resolvedPositions.length);
 
-        if (strengthCard) {
-            var wr = stats.winRate || 0;
-            var score = wr >= 65 ? 'strong' : (wr >= 45 ? 'medium' : 'weak');
-            var label = wr >= 65 ? 'Сильный' : (wr >= 45 ? 'Средний' : 'Слабый');
-            strengthCard.className = 'wallet-strength-card ' + score;
-            strengthCard.innerHTML = '<div class="ws-head"><div class="ws-head-label">Скоринг кошелька</div><div class="ws-badge ' + score + '">' + label + '</div></div>'
-                + '<div class="ws-comps"><div class="ws-comp"><div class="ws-comp-row"><span class="ws-comp-label">Win Rate</span><span class="ws-comp-val">' + wr.toFixed(1) + '%</span></div><div class="ws-comp-bar"><div class="ws-comp-fill fill-' + score + '" style="width:' + Math.min(wr, 100) + '%"></div></div></div></div>';
-        }
-
-        var historyContainer = $('wallet-history');
-        if (historyContainer && stats.positions && stats.positions.length > 0) {
+        var historyContainer = $('history-list');
+        if (historyContainer) {
             renderHistory(stats, historyContainer);
         }
+
+        // Account age
+        var ageEl = document.getElementById('account-age');
+        if (ageEl) {
+            getAccountAge(wallet, stats.closedMarkets || stats.resolvedPositions || []).then(function(age) {
+                if (age) ageEl.textContent = age.duration + ' · ' + age.date;
+            });
+        }
+
+        updateAIRemaining();
+        updateTrackBtn();
     }
 
     function renderHistory(stats, container) {
         if (!container) return;
-        var positions = stats.positions || [];
-        var html = '<div class="section-divider"></div><div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px">История позиций</div>';
-        positions.slice(0, 50).forEach(function(pos) {
-            var size = parseFloat(pos.size) || 0;
-            var price = parseFloat(pos.price) || 0;
-            var side = pos.side || 'BUY';
-            var pnl = parseFloat(pos.pnl);
-            var pnlCls = pnl >= 0 ? 'positive' : 'negative';
-            var timestamp = pos.createdAt || pos.timestamp || pos.time;
-            var timeStr = timestamp ? getTimeAgo(timestamp) : '';
-            html += '<div style="display:flex;gap:8px;padding:8px 10px;background:var(--card-bg-2);border:1px solid var(--border);border-radius:10px;margin-bottom:4px;font-size:11px;align-items:center">'
-                + '<span style="font-weight:700;color:' + (side === 'BUY' ? 'var(--positive)' : 'var(--negative)') + '">' + side + '</span>'
-                + '<span style="flex:1;color:var(--text)">' + size + ' @ $' + price.toFixed(2) + '</span>'
-                + '<span class="' + pnlCls + '" style="font-weight:700">' + (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) + '</span>'
-                + '<span style="color:var(--text-tertiary);font-size:10px">' + timeStr + '</span>'
-                + '</div>';
+
+        const positionsToRender = currentSubTab === 'active' ? stats.openPositions : (stats.resolvedPositions || stats.closedMarkets);
+
+        if (!positionsToRender || positionsToRender.length === 0) {
+            container.innerHTML = '<p style="color: #8b949e; text-align: center; padding: 20px;">Нет ' + (currentSubTab === 'active' ? 'активных' : 'закрытых') + ' позиций</p>';
+            return;
+        }
+
+        const filtered = positionsToRender.filter(function(market) {
+            var pnl = getPositionPnl(market);
+            var wIds = stats && stats.whaleConditionIds;
+            var marketCid = getPositionConditionId(market);
+            var isWhale = (parseFloat(market.initialValue || 0) >= WHALE_THRESHOLD) || (
+                wIds && wIds.length > 0 && (
+                    wIds.indexOf(marketCid) >= 0 ||
+                    wIds.indexOf(market.marketId || '') >= 0 ||
+                    wIds.indexOf(market.slug || '') >= 0 ||
+                    wIds.indexOf(market.marketSlug || '') >= 0
+                )
+            );
+            var signOk = historyFilter.sign === 'all' ||
+                (historyFilter.sign === 'whale' && isWhale) ||
+                (historyFilter.sign === 'plus' && pnl > 0) ||
+                (historyFilter.sign === 'minus' && pnl < 0);
+            return signOk;
         });
-        if (positions.length === 0) html += '<p style="color:var(--text-secondary);text-align:center;padding:16px">Нет позиций</p>';
-        container.innerHTML = html;
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<p style="color: #8b949e; text-align: center; padding: 20px;">Нет позиций по заданным фильтрам</p>';
+            return;
+        }
+
+        filtered.sort(function(a, b) {
+            if (historySort === 'pnl-asc') return getPositionPnl(a) - getPositionPnl(b);
+            if (historySort === 'pnl-desc') return getPositionPnl(b) - getPositionPnl(a);
+            var da = getPositionCloseTime(a);
+            var db = getPositionCloseTime(b);
+            return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+        });
+
+        container.innerHTML = filtered.map(function(market) {
+            var pnl = getPositionPnl(market);
+            var isWin = pnl >= 0;
+            var marketName = (market.title || '').substring(0, 50) || 'Unknown';
+
+            var initialVal = parseFloat(market.initialValue || 0);
+            var avgPrice = parseFloat(market.avgPrice || 0);
+            var sizeShares = parseFloat(market.size || market.totalBought || 0);
+            var shares = sizeShares > 0 ? sizeShares : (avgPrice > 0 ? initialVal / avgPrice : 0);
+            var outcome = market.outcome || '';
+            var priceCents = (avgPrice * 100).toFixed(1);
+
+            var marketLink = market.slug ? 'https://polymarket.com/market/' + market.slug : '';
+
+            var wIds = stats && stats.whaleConditionIds;
+            var marketCid = getPositionConditionId(market);
+            var isWhale = (initialVal >= WHALE_THRESHOLD) || (
+                wIds && wIds.length > 0 && (
+                    wIds.indexOf(marketCid) >= 0 ||
+                    wIds.indexOf(market.marketId || '') >= 0 ||
+                    wIds.indexOf(market.slug || '') >= 0 ||
+                    wIds.indexOf(market.marketSlug || '') >= 0
+                )
+            );
+
+            var pnlPercent = initialVal > 0 ? (pnl / initialVal * 100) : 0;
+            var balance = initialVal + pnl;
+
+            var closeDate = market.timestamp ? new Date(market.timestamp * 1000).toLocaleDateString('ru-RU') : '-';
+            var marketEndDate = market.endDate ? new Date(market.endDate).toLocaleDateString('ru-RU') : '-';
+            var entryTs = null;
+            if (marketCid && stats && stats.entryDateMap) entryTs = stats.entryDateMap[marketCid.toLowerCase()];
+            if (!entryTs && market.slug && stats && stats.entryDateBySlug) entryTs = stats.entryDateBySlug[market.slug];
+            var entryDate = entryTs ? new Date(entryTs * 1000).toLocaleDateString('ru-RU') : '-';
+
+            return '<div class="history-item ' + (isWin ? 'win' : 'loss') + (isWhale ? ' whale' : '') + '">'
+                + '<div class="hi-top">'
+                    + '<div class="hi-title">' + (marketLink ? '<a href="' + marketLink + '" target="_blank" class="market-link">' + marketName + '</a>' : marketName) + '</div>'
+                    + (isWhale ? '<span class="hi-whale">🐋</span>' : '')
+                + '</div>'
+                + '<div class="hi-choice">'
+                    + '<span class="hi-outcome">' + outcome + '</span>'
+                    + '<span class="hi-sep">·</span>'
+                    + '<span class="hi-shares">' + shares.toLocaleString('en-US', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' shares</span>'
+                    + '<span class="hi-sep">·</span>'
+                    + '<span class="hi-px">' + priceCents + '¢</span>'
+                    + '<span class="hi-sep">·</span>'
+                    + '<span class="hi-invested">' + formatCurrency(initialVal) + '</span>'
+                + '</div>'
+                + '<div class="hi-result">'
+                    + '<span class="hi-balance">' + formatCurrency(balance) + '</span>'
+                    + '<span class="hi-pnl ' + (isWin ? 'up' : 'down') + '">' + (pnl >= 0 ? '+' : '') + formatCurrency(pnl) + ' (' + (pnlPercent >= 0 ? '+' : '') + pnlPercent.toFixed(1) + '%)</span>'
+                    + '<button class="hi-copy-btn" data-trade="' + encodeURIComponent(marketName + ' | ' + outcome + ' | ' + shares.toFixed(1) + ' shares @ ' + priceCents + '¢ | Invested: $' + initialVal.toFixed(2) + ' | PnL: ' + (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2) + ' (' + (pnlPercent >= 0 ? '+' : '') + pnlPercent.toFixed(1) + '%) | Return: ' + formatCurrency(balance)) + '" title="Copy trade data">\u2398</button>'
+                + '</div>'
+            + '</div>';
+        }).join('');
+    }
+
+    // ====================== WALLET HELPERS ======================
+
+    function isOpenPosition(p) {
+        var size = parseFloat(p.size || p.quantity || 0);
+        return size > 0.01 && parseFloat(p.curPrice || 0) > 0;
+    }
+
+    function isClosedPosition(p) {
+        var size = parseFloat(p.size || p.quantity || 0);
+        return size > 0.01 && parseFloat(p.curPrice || 0) === 0;
+    }
+
+    function isWinPosition(p) {
+        return parseFloat(p.cashPnl || p.realizedPnl || 0) > 0;
+    }
+
+    function getPositionPnl(p) {
+        var apiPnl = parseFloat(p.cashPnl);
+        if (isNaN(apiPnl)) apiPnl = parseFloat(p.realizedPnl);
+        if (!isNaN(apiPnl)) return apiPnl;
+
+        if (!p._isClosedPosition && !isClosedPosition(p)) return 0;
+
+        var bought = parseFloat(p.totalBought || 0);
+        var sold = parseFloat(p.totalSold || 0);
+        if (bought > 0 || sold > 0) return sold - bought;
+
+        var size = parseFloat(p.size || 0);
+        var avgPx = parseFloat(p.averagePrice || p.avgPrice || p.price || 0);
+        var cost = parseFloat(p.initialValue || 0);
+        if (cost === 0 && size > 0 && avgPx > 0) cost = size * avgPx;
+        if (cost === 0) cost = size;
+        if (isWinPosition(p)) { var payout = size; return payout - cost; }
+        return -cost;
+    }
+
+    function getPositionConditionId(p) {
+        return p.conditionId || p.marketId || '';
+    }
+
+    function getUniquePositionKey(p) {
+        var cid = getPositionConditionId(p);
+        var idx = p.outcomeIndex !== undefined ? p.outcomeIndex : '';
+        return cid + ':' + idx;
+    }
+
+    function getPositionInvestment(p) {
+        if (p._isClosedPosition) return parseFloat(p.totalBought || 0) || 1;
+        return parseFloat(p.initialValue || Math.abs(parseFloat(p.cashPnl || 0))) || 1;
+    }
+
+    function getPositionCloseTime(p) {
+        if (p.timestamp) return new Date(p.timestamp * 1000);
+        if (p.endDate) return new Date(p.endDate);
+        return null;
+    }
+
+    function calcPositionFee(p) {
+        var cid = getPositionConditionId(p);
+        if (!cid || !/^0x[a-fA-F0-9]{64}$/.test(cid)) return 0;
+        var fs = _feeCache[cid] || { rate: 0.05, exponent: 1, takerOnly: true };
+        if (!fs.rate) return 0;
+        var size = parseFloat(p.size || p.quantity || 0);
+        if (size <= 0) return 0;
+        var entryPrice = parseFloat(p.avgPrice);
+        if (!entryPrice || entryPrice <= 0) {
+            var cost = parseFloat(p.initialValue || 0);
+            if (cost > 0) entryPrice = cost / size;
+        }
+        if (!entryPrice || entryPrice <= 0) return 0;
+        var price = Math.min(1, Math.max(0.001, entryPrice));
+        return fs.rate * price * (1 - price) * size;
+    }
+
+    function calculateStats(positions, closedPositions, trades, totalFees, walletAddress) {
+        totalFees = totalFees || 0;
+        walletAddress = walletAddress || '';
+        var seenKeys = new Set();
+        var allPositions = [];
+        var positionsConds = new Set();
+
+        for (var i = 0; i < positions.length; i++) {
+            var p = positions[i];
+            var key = getUniquePositionKey(p);
+            if (key && seenKeys.has(key)) continue;
+            if (key) seenKeys.add(key);
+            var cid = getPositionConditionId(p);
+            if (cid) positionsConds.add(cid.toLowerCase());
+            allPositions.push(Object.assign({}, p, { slug: p.slug || p.marketSlug || p.eventSlug || '' }));
+        }
+
+        for (var i = 0; i < closedPositions.length; i++) {
+            var p = closedPositions[i];
+            var cid = getPositionConditionId(p);
+            if (cid && positionsConds.has(cid.toLowerCase())) continue;
+            var key = getUniquePositionKey(p);
+            if (key && seenKeys.has(key)) continue;
+            if (key) seenKeys.add(key);
+            allPositions.push(Object.assign({}, p, {
+                slug: p.slug || p.marketSlug || p.eventSlug || '',
+                curPrice: 0,
+                cashPnl: p.realizedPnl || 0,
+                _isClosedPosition: true
+            }));
+        }
+
+        var allConds = new Set();
+        for (var i = 0; i < allPositions.length; i++) {
+            var cid = getPositionConditionId(allPositions[i]);
+            if (cid) allConds.add(cid.toLowerCase());
+        }
+        var tradeConds = new Map();
+        for (var i = 0; i < trades.length; i++) {
+            var t = trades[i];
+            var pnl = parseFloat(t.pnl || 0);
+            if (pnl === 0) continue;
+            var cid = getPositionConditionId(t);
+            if (!cid || allConds.has(cid.toLowerCase())) continue;
+            var existing = tradeConds.get(cid);
+            if (existing) {
+                existing.cashPnl = (parseFloat(existing.cashPnl || 0) || 0) + pnl;
+                existing.size = (parseFloat(existing.size || 0) || 0) + parseFloat(t.size || 0);
+            } else {
+                tradeConds.set(cid, {
+                    conditionId: cid,
+                    slug: t.slug || t.marketSlug || '',
+                    size: parseFloat(t.size || 0),
+                    curPrice: 0,
+                    cashPnl: pnl,
+                    _isClosedPosition: true,
+                    _fromTrade: true,
+                    title: t.marketTitle || t.conditionTitle || 'Trade',
+                    outcome: t.outcome || ''
+                });
+            }
+        }
+        for (var entry of tradeConds) {
+            allPositions.push(entry[1]);
+        }
+
+        var openPositions = allPositions.filter(isOpenPosition);
+        var closedMarkets = allPositions.filter(function(p) {
+            if (p._isClosedPosition) return true;
+            if (!isClosedPosition(p)) return false;
+            return true;
+        });
+
+        var closedMap = new Map();
+        for (var i = 0; i < closedMarkets.length; i++) {
+            var p = closedMarkets[i];
+            var cid = getPositionConditionId(p);
+            if (!cid) { closedMap.set(Symbol(), p); continue; }
+            if (closedMap.has(cid)) {
+                var existing = closedMap.get(cid);
+                existing._mergedPnl = (existing._mergedPnl !== undefined ? existing._mergedPnl : parseFloat(existing.realizedPnl || existing.cashPnl || 0))
+                    + parseFloat(p.realizedPnl || p.cashPnl || 0);
+            } else {
+                closedMap.set(cid, Object.assign({}, p));
+            }
+        }
+        var uniqueClosed = [];
+        for (var entry of closedMap) {
+            var p = entry[1];
+            if (p._mergedPnl !== undefined) {
+                p.realizedPnl = p._mergedPnl;
+                p.cashPnl = p._mergedPnl;
+                delete p._mergedPnl;
+            }
+            uniqueClosed.push(p);
+        }
+
+        var resolvedPositions = allPositions.filter(function(p) { return p._isClosedPosition || isClosedPosition(p); });
+        var winPositions = resolvedPositions.filter(function(p) { return getPositionPnl(p) > 0; });
+        var lossPositions = resolvedPositions.filter(function(p) { return getPositionPnl(p) < 0; });
+        var wins = winPositions.length;
+        var losses = lossPositions.length;
+        var totalTrades = wins + losses;
+        var totalPositions = resolvedPositions.length + openPositions.length;
+        var winrate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(1) : '0.0';
+        var neutralCount = resolvedPositions.length - wins - losses;
+
+        var allTrades = trades.map(function(t) {
+            return {
+                title: t.marketTitle || t.conditionTitle || 'Unknown',
+                volume: parseFloat(t.notional || t.cost || (t.size * t.avgPrice) || t.size || 0),
+                pnl: parseFloat(t.pnl || t.profit || 0),
+                outcome: t.outcome || '',
+                avgPrice: parseFloat(t.avgPrice || 0),
+                endDate: t.timestamp ? new Date(t.timestamp).toISOString() : null,
+                slug: t.slug || t.marketSlug || '',
+                conditionId: getPositionConditionId(t),
+                timestamp: t.timestamp,
+                isClosed: t.status === 'closed' || t.settled === true || parseFloat(t.pnl || 0) !== 0
+            };
+        });
+
+        var whaleTrades = allTrades.filter(function(t) { return t.volume >= WHALE_THRESHOLD; });
+        var whaleIds = new Set();
+        whaleTrades.forEach(function(t) {
+            if (t.conditionId) whaleIds.add(t.conditionId);
+            if (t.slug) whaleIds.add(t.slug);
+            if (t.marketSlug) whaleIds.add(t.marketSlug);
+        });
+        var whalePositions = uniqueClosed.filter(function(p) {
+            return whaleIds.has(getPositionConditionId(p)) || whaleIds.has(p.slug || '') || whaleIds.has(p.marketSlug || '');
+        });
+        var whaleWins = whalePositions.filter(function(p) { return isWinPosition(p); }).length;
+        var whaleWr = whalePositions.length > 0 ? ((whaleWins / whalePositions.length) * 100).toFixed(1) : '0.0';
+        var whaleCount = whalePositions.length;
+        var whaleActive = whaleTrades.filter(function(t) { return !t.isClosed; });
+        var whaleClosedList = whaleTrades.filter(function(t) { return t.isClosed; });
+
+        var realizedPositive = 0, realizedNegative = 0, realizedClosedLoss = 0;
+        for (var i = 0; i < resolvedPositions.length; i++) {
+            var pnl = getPositionPnl(resolvedPositions[i]);
+            if (pnl > 0) realizedPositive += pnl;
+            else realizedNegative += Math.abs(pnl);
+        }
+        for (var i = 0; i < lossPositions.length; i++) {
+            realizedClosedLoss += Math.abs(getPositionPnl(lossPositions[i]));
+        }
+        var netPnl = realizedPositive - realizedNegative;
+
+        var openPositivePnl = 0, openNegativePnl = 0, openValue = 0;
+        for (var i = 0; i < openPositions.length; i++) {
+            var p = openPositions[i];
+            var cv = parseFloat(p.currentValue || 0);
+            var pnl = parseFloat(p.cashPnl || 0);
+            openValue += cv;
+            if (pnl > 0) openPositivePnl += pnl;
+            else openNegativePnl += Math.abs(pnl);
+        }
+
+        var drawdownPnl = 0;
+        for (var i = 0; i < allPositions.length; i++) {
+            var pnl = getPositionPnl(allPositions[i]);
+            if (pnl < 0) drawdownPnl += Math.abs(pnl);
+        }
+
+        var realizedClosedPnl = 0, redeemablePnl = 0, polymarketRedeemablePnl = 0, polymarketPnl = 0;
+        for (var i = 0; i < resolvedPositions.length; i++) {
+            var pnl = getPositionPnl(resolvedPositions[i]);
+            if (resolvedPositions[i]._isClosedPosition) {
+                realizedClosedPnl += pnl;
+                polymarketPnl += pnl;
+            } else {
+                redeemablePnl += pnl;
+                var cashPnl = parseFloat(resolvedPositions[i].cashPnl || resolvedPositions[i].realizedPnl || 0);
+                polymarketRedeemablePnl += cashPnl;
+                polymarketPnl += cashPnl;
+            }
+        }
+        var openPnlNet = openPositivePnl - openNegativePnl;
+
+        var entryDateMap = {};
+        var entryDateBySlug = {};
+        (trades || []).forEach(function(t) {
+            if (t.side === 'BUY' && t.timestamp) {
+                if (t.conditionId) {
+                    var cid = t.conditionId.toLowerCase();
+                    if (!entryDateMap[cid] || t.timestamp < entryDateMap[cid]) entryDateMap[cid] = t.timestamp;
+                }
+                if (t.slug) {
+                    if (!entryDateBySlug[t.slug] || t.timestamp < entryDateBySlug[t.slug]) entryDateBySlug[t.slug] = t.timestamp;
+                }
+            }
+        });
+
+        var sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        var hasRecentActivity = (trades || []).some(function(t) {
+            return t.timestamp && t.timestamp * 1000 >= sevenDaysAgo;
+        });
+
+        return {
+            walletAddress: walletAddress,
+            netPnl: netPnl,
+            realizedLoss: realizedClosedLoss,
+            totalFees: totalFees || 0,
+            resolvedPnlBeforeFees: 0,
+            resolvedPnlAfterFees: 0,
+            totalWins: wins,
+            totalLosses: losses,
+            neutralCount: neutralCount,
+            totalTrades: totalTrades,
+            totalPositions: totalPositions,
+            winrate: winrate,
+            whaleWr: whaleWr,
+            whaleCount: whaleCount,
+            hasRecentActivity: hasRecentActivity,
+            positivePnl: openPositivePnl,
+            negativePnl: openNegativePnl,
+            openPnl: openValue,
+            drawdownPnl: drawdownPnl,
+            realizedClosedPnl: realizedClosedPnl,
+            redeemablePnl: redeemablePnl,
+            polymarketRedeemablePnl: polymarketRedeemablePnl,
+            openPnlNet: openPnlNet,
+            polymarketPnl: polymarketPnl,
+            closedMarkets: uniqueClosed,
+            resolvedPositions: resolvedPositions,
+            whaleTrades: whaleTrades,
+            whaleActive: whaleActive,
+            whaleClosed: whaleClosedList,
+            whaleConditionIds: Array.from(whaleIds),
+            openPositions: openPositions,
+            entryDateMap: entryDateMap,
+            entryDateBySlug: entryDateBySlug
+        };
+    }
+
+    // === FEE CALCULATION ===
+    async function fetchMarketFeeInfo(conditionId) {
+        if (_feeCache[conditionId]) return _feeCache[conditionId];
+        try {
+            var text = await pageFetch('https://gamma-api.polymarket.com/markets?conditionId=' + encodeURIComponent(conditionId));
+            var data = JSON.parse(text);
+            var list = Array.isArray(data) ? data : (data.data || []);
+            var cidLower = conditionId.toLowerCase();
+            var market = list.find(function(m) { return (m.conditionId || '').toLowerCase() === cidLower; });
+            if (market) {
+                var fs = market.feeSchedule;
+                if (typeof fs === 'string') fs = JSON.parse(fs);
+                if (fs && fs.rate > 0) { _feeCache[conditionId] = fs; return fs; }
+                var tbf = parseFloat(market.takerBaseFee);
+                if (tbf > 0) {
+                    var rate = tbf / 20000;
+                    _feeCache[conditionId] = { rate: rate, exponent: 1, takerOnly: true };
+                    return _feeCache[conditionId];
+                }
+            }
+            _feeCache[conditionId] = null;
+            return null;
+        } catch (e) {
+            _feeCache[conditionId] = null;
+            return null;
+        }
+    }
+
+    async function computePositionFees(resolvedPositions) {
+        if (!resolvedPositions || !resolvedPositions.length) return 0;
+        var cidSet = {};
+        resolvedPositions.forEach(function(p) {
+            var cid = getPositionConditionId(p);
+            if (cid && /^0x[a-fA-F0-9]{64}$/.test(cid)) cidSet[cid] = true;
+        });
+        var conditionIds = Object.keys(cidSet);
+        if (!conditionIds.length) return 0;
+        var feeSchedules = await Promise.all(conditionIds.map(function(cid) {
+            return fetchMarketFeeInfo(cid).catch(function() { return null; });
+        }));
+        var feeMap = {};
+        conditionIds.forEach(function(cid, i) {
+            var fs = feeSchedules[i];
+            if (fs && fs.rate > 0) {
+                feeMap[cid] = { rate: parseFloat(fs.rate || 0), exponent: parseFloat(fs.exponent || 1), takerOnly: fs.takerOnly === true };
+            }
+        });
+        var totalFees = 0;
+        resolvedPositions.forEach(function(p) {
+            var cid = getPositionConditionId(p);
+            if (!cid || !/^0x[a-fA-F0-9]{64}$/.test(cid)) return;
+            var feeCfg = feeMap[cid] || { rate: 0.05, takerOnly: true };
+            var size = parseFloat(p.size || p.quantity || 0);
+            if (size <= 0) return;
+            var entryPrice = parseFloat(p.avgPrice);
+            if (!entryPrice || entryPrice <= 0) {
+                var cost = parseFloat(p.initialValue || 0);
+                if (cost > 0) entryPrice = cost / size;
+            }
+            if (!entryPrice || entryPrice <= 0) return;
+            var price = Math.min(1, Math.max(0.001, entryPrice));
+            var feePerShare = feeCfg.rate * price * (1 - price);
+            totalFees += feePerShare * size;
+        });
+        return totalFees;
+    }
+
+    // === UI UPDATE HELPERS ===
+    function el(id, val) { var e = document.getElementById(id); if (e) e.innerText = val; }
+
+    function setPnl(id, val) {
+        var e = document.getElementById(id);
+        if (!e) return;
+        e.innerText = (val >= 0 ? '+' : '') + formatCurrency(val);
+        e.className = 'stats-value ' + (val >= 0 ? 'positive' : 'negative');
+    }
+
+    function formatCurrency(num) {
+        if (num === null || num === undefined || isNaN(num)) return '$0.00';
+        var abs = Math.abs(num).toFixed(2);
+        var parts = abs.split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        return '$' + parts.join('.');
+    }
+
+    function updateMainPnl() {
+        var pnlEl = document.getElementById('pnl-val');
+        if (!pnlEl || !currentStats) return;
+        var val = currentStats.resolvedPnlBeforeFees;
+        pnlEl.innerText = (val >= 0 ? '+' : '') + formatCurrency(val);
+        pnlEl.className = 'pnl-value ' + (val >= 0 ? 'positive' : 'negative');
+        var pnlCard = pnlEl.closest('.main-pnl-card');
+        if (pnlCard) {
+            pnlCard.classList.remove('score-strong', 'score-medium', 'score-weak');
+            var scoreResult = calcWalletScore(currentStats);
+            if (scoreResult && scoreResult.rating) pnlCard.classList.add('score-' + scoreResult.rating);
+        }
+        updateBreakdownDisplay();
+    }
+
+    function updateBreakdownDisplay() {
+        if (!currentStats) return;
+        var s = currentStats;
+        var beforeEl = document.getElementById('pnl-before-fees');
+        if (beforeEl) {
+            beforeEl.innerText = (s.resolvedPnlBeforeFees >= 0 ? '+' : '') + formatCurrency(s.resolvedPnlBeforeFees);
+            beforeEl.className = 'stats-value ' + (s.resolvedPnlBeforeFees >= 0 ? 'positive' : 'negative');
+        }
+        var afterEl = document.getElementById('pnl-after-fees');
+        if (afterEl) {
+            afterEl.innerText = (s.resolvedPnlAfterFees >= 0 ? '+' : '') + formatCurrency(s.resolvedPnlAfterFees);
+            afterEl.className = 'stats-value ' + (s.resolvedPnlAfterFees >= 0 ? 'positive' : 'negative');
+        }
+        var feesEl = document.getElementById('total-fees');
+        if (feesEl) feesEl.innerText = formatCurrency(s.totalFees);
+        setPnl('open-pnl-net', s.openPnlNet);
+        el('open-pnl', formatCurrency(s.openPnl));
+        var lossEl = document.getElementById('total-loss');
+        if (lossEl) {
+            lossEl.innerText = '-' + formatCurrency(s.realizedLoss);
+            lossEl.className = 'stats-value negative';
+        }
+        el('active-count', s.openPositions ? s.openPositions.length : 0);
+        el('closed-count', s.resolvedPositions ? s.resolvedPositions.length : 0);
+    }
+
+    // === ACCOUNT AGE ===
+    async function fetchUserCreatedAt(wallet) {
+        try {
+            var res = await fetch('/api/profile/userData?wallet=' + encodeURIComponent(wallet), { credentials: 'include' });
+            if (!res.ok) return null;
+            var data = await res.json();
+            return data && (data.createdAt || data.joinDate || data.timestamp) || null;
+        } catch (e) { return null; }
+    }
+
+    function formatDuration(fromMs) {
+        var now = Date.now();
+        var ms = now - fromMs;
+        var days = Math.floor(ms / 86400000);
+        if (days < 1) return 'менее дня';
+        if (days < 30) return days + ' дн.';
+        var months = Math.floor(days / 30);
+        var remDays = days % 30;
+        if (months < 12) return remDays > 0 ? months + ' мес. ' + remDays + ' дн.' : months + ' мес.';
+        var years = Math.floor(months / 12);
+        var remMonths = months % 12;
+        return remMonths > 0 ? years + ' г. ' + remMonths + ' мес.' : years + ' г.';
+    }
+
+    async function getAccountAge(wallet, trades) {
+        var earliestMs = null;
+        try {
+            var createdAt = await fetchUserCreatedAt(wallet);
+            if (createdAt) {
+                var ts = parseInt(createdAt, 10);
+                if (!isNaN(ts)) earliestMs = ts * (ts > 1e12 ? 1 : 1000);
+            }
+        } catch (e) {}
+        if (!earliestMs && trades && trades.length > 0) {
+            var timestamps = trades.map(function(t) { return parseInt(t.timestamp || t.createdAt || 0, 10); }).filter(function(ts) { return ts > 0; });
+            if (timestamps.length > 0) earliestMs = Math.min.apply(null, timestamps) * 1000;
+        }
+        if (!earliestMs) return null;
+        return { duration: formatDuration(earliestMs), date: new Date(earliestMs).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) };
+    }
+
+    // === TRACKER ===
+    function getTracked() {
+        try { return JSON.parse(localStorage.getItem('polyTracked') || '[]'); } catch (e) { return []; }
+    }
+
+    function saveTracked(list) {
+        localStorage.setItem('polyTracked', JSON.stringify(list));
+    }
+
+    function isWalletTracked(address) {
+        if (!address) return false;
+        var tracked = getTracked();
+        return tracked.some(function(t) { return t.address && t.address.toLowerCase() === address.toLowerCase(); });
+    }
+
+    function addCurrentToTracker() {
+        var wallet = searchedWallet || lastWallet;
+        if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) return;
+        var tracked = getTracked();
+        var existing = tracked.find(function(t) { return t.address.toLowerCase() === wallet.toLowerCase(); });
+        if (existing) {
+            showTrackerModal(existing);
+        } else {
+            var name = wallet.substring(0, 6) + '...' + wallet.substring(38);
+            showTrackerModal({ name: name, address: wallet, tradeType: 'entry', selection: '', comment: '', createdAt: Date.now() });
+        }
+        updateTrackBtn();
+    }
+
+    function showTrackerModal(data) {
+        var el = function(id) { return document.getElementById(id); };
+        el('trkEditId').value = data && data.id || '';
+        el('trkModalTitle').textContent = data && data.id ? 'Редактировать запись трекера' : 'Добавить в трекер';
+        el('trkName').value = data && data.name || '';
+        el('trkAddress').value = data && data.address || '';
+        el('trkType').value = data && data.tradeType || 'entry';
+        el('trkSelection').value = data && data.selection || '';
+        el('trkComment').value = data && data.comment || '';
+        el('trkModalOverlay').style.display = 'flex';
+        el('trkName').focus();
+    }
+
+    function hideTrackerModal() {
+        document.getElementById('trkModalOverlay').style.display = 'none';
+    }
+
+    function saveTrackerFromModal() {
+        var el = function(id) { return document.getElementById(id); };
+        var editId = el('trkEditId').value;
+        var name = el('trkName').value.trim();
+        var address = el('trkAddress').value.trim();
+        var tradeType = el('trkType').value;
+        var selection = el('trkSelection').value.trim();
+        var comment = el('trkComment').value.trim();
+        if (!name) { /* no toast, silent */ return; }
+        if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) return;
+        var tracked = getTracked();
+        if (editId) {
+            var found = false;
+            tracked.forEach(function(t) {
+                if (t.id === editId) { t.name = name; t.address = address; t.tradeType = tradeType; t.selection = selection; t.comment = comment; t.createdAt = Date.now(); found = true; }
+            });
+            if (!found) return;
+        } else {
+            if (tracked.length >= 15) { tracked.sort(function(a, b) { return a.createdAt - b.createdAt; }); tracked.shift(); }
+            var dup = tracked.some(function(t) { return t.address.toLowerCase() === address.toLowerCase(); });
+            if (dup) return;
+            tracked.push({ id: Date.now().toString(36) + Math.random().toString(36).substring(2, 7), name: name, address: address, tradeType: tradeType, selection: selection, comment: comment, createdAt: Date.now() });
+        }
+        saveTracked(tracked);
+        hideTrackerModal();
+        updateTrackBtn();
+    }
+
+    function updateTrackBtn() {
+        var btn = document.getElementById('addTrackerBtn');
+        if (!btn) return;
+        var wallet = searchedWallet || lastWallet;
+        if (!wallet) { btn.classList.remove('active'); return; }
+        var tracked = getTracked();
+        var inTrack = tracked.some(function(t) { return t.address && t.address.toLowerCase() === wallet.toLowerCase(); });
+        btn.classList.toggle('active', inTrack);
+    }
+
+    // === WALLET SCORE ===
+    function calcWalletScore(s) {
+        var wr = parseFloat(s.winrate) || 0;
+        var pnl = s.netPnl || 0;
+        var whaleCount = s.whaleCount || 0;
+        var whaleWr = parseFloat(s.whaleWr) || 0;
+        var wins = s.totalWins || 0;
+        var losses = s.totalLosses || 0;
+
+        var now = Date.now();
+        var sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+        var recentClosed = 0;
+        var resolved = s.resolvedPositions || [];
+        for (var i = 0; i < resolved.length; i++) {
+            var ct = getPositionCloseTime(resolved[i]);
+            if (ct && ct.getTime() >= sevenDaysAgo) recentClosed++;
+        }
+        var recentOpen = (s.openPositions || []).length;
+        var recentPositions = recentClosed + recentOpen;
+
+        var wrOk = wr >= 50;
+        var pnlOk = pnl > 500;
+        var activityOk = recentPositions >= 10;
+        var winsMore = wins > losses;
+        var lossNotExceed = pnl > 0;
+        var allMinima = wrOk && pnlOk && activityOk && winsMore && lossNotExceed;
+        var wrGood = wr >= 65;
+        var pnlGood = pnl > 1500;
+        var wrBest = wr >= 75;
+        var pnlBest = pnl > 3000;
+
+        var scoreWr = Math.min(40, Math.round(wr / 100 * 40));
+        var scorePnl = pnl > 3000 ? 25 : (pnl > 1500 ? 20 : (pnl > 500 ? 15 : (pnl > 0 ? 10 : 0)));
+        var scoreActivity = Math.min(15, Math.round(recentPositions / 10 * 15));
+        var scoreWhale = (whaleCount > 0 && whaleWr >= 70) ? 20 : ((whaleCount > 0 && whaleWr > 50) ? 10 : (whaleCount > 0 ? 5 : 0));
+        var totalScore = Math.min(100, Math.max(0, scoreWr + scorePnl + scoreActivity + scoreWhale));
+
+        var rating, label, rec;
+        if (allMinima && wrBest && pnlBest) { rating = 'strong'; label = 'Точно рекомендуем'; rec = 'Точно рекомендуется для копирования'; }
+        else if (allMinima && wrGood && pnlGood) { rating = 'strong'; label = 'Рекомендуется'; rec = 'Рекомендуется для копирования'; }
+        else if (allMinima) { rating = 'medium'; label = 'Интересен'; rec = 'Интересен для наблюдения'; }
+        else { rating = 'weak'; label = 'Не рекомендуется'; rec = 'Не рекомендуется'; }
+
+        var pnlStr = (pnl >= 0 ? '+' : '') + formatCurrency(pnl);
+        var activityStr = recentPositions + ' поз. за 7д';
+        var comps = [
+            { label: 'WR', val: wr + '%', score: scoreWr, max: 40, pass: wrOk, good: wrGood },
+            { label: 'PNL', val: pnlStr, score: scorePnl, max: 25, pass: pnlOk, good: pnlGood },
+            { label: 'Активность', val: activityStr, score: scoreActivity, max: 15, pass: activityOk, good: recentPositions >= 10 },
+        ];
+        if (whaleCount > 0) {
+            comps.push({ label: 'Whale WR', val: whaleWr + '%', score: scoreWhale, max: 20, pass: whaleWr > 50, good: whaleWr >= 70 });
+        }
+        return { score: totalScore, rating: rating, label: label, rec: rec, comps: comps, _recentPositions: recentPositions };
+    }
+
+    function updateWalletStrength() {
+        if (!currentStats) return;
+        var result = calcWalletScore(currentStats);
+        var card = document.getElementById('wallet-strength-card');
+        if (!card) return;
+        card.className = 'wallet-strength-card ' + result.rating;
+
+        var compsHtml = '';
+        for (var i = 0; i < result.comps.length; i++) {
+            var c = result.comps[i];
+            var pct = c.max > 0 ? c.score / c.max * 100 : 0;
+            var fillCls = pct >= 80 ? 'fill-strong' : pct >= 40 ? 'fill-medium' : 'fill-weak';
+            compsHtml += '<div class="ws-comp">'
+                + '<div class="ws-comp-row">'
+                    + '<span class="ws-comp-label">' + c.label + '</span>'
+                    + '<span class="ws-comp-val">' + c.val + '</span>'
+                    + '<span class="ws-comp-score">' + c.score + '/' + c.max + '</span>'
+                + '</div>'
+                + '<div class="ws-comp-bar">'
+                    + '<div class="ws-comp-fill ' + fillCls + '" style="width:' + pct + '%"></div>'
+                + '</div>'
+            + '</div>';
+        }
+
+        card.innerHTML = ''
+            + '<div class="ws-head">'
+                + '<span class="ws-head-label">СКОР КОШЕЛЬКА</span>'
+                + '<span class="ws-badge ' + result.rating + '">' + result.score + ' · ' + result.label + '</span>'
+            + '</div>'
+            + '<div class="ws-comps">' + compsHtml + '</div>';
+    }
+
+    // === BACKTEST ===
+    async function runBacktest() {
+        var closed = (currentStats && currentStats.closedMarkets) || [];
+        if (closed.length === 0) { alert('Нет закрытых позиций для бэктеста'); return; }
+        var amount = parseFloat(document.getElementById('bt-amount').value) || 1000;
+        var now = new Date();
+        var cidSet = {};
+        closed.forEach(function(p) {
+            var cid = getPositionConditionId(p);
+            if (cid && /^0x[a-fA-F0-9]{64}$/.test(cid) && !_feeCache[cid]) cidSet[cid] = true;
+        });
+        var cids = Object.keys(cidSet);
+        if (cids.length) {
+            await Promise.all(cids.map(function(cid) { return fetchMarketFeeInfo(cid).catch(function() {}); }));
+        }
+        var periods = [
+            { id: 'bt-24h', start: new Date(now - 24 * 60 * 60 * 1000), periodId: '24h' },
+            { id: 'bt-7d', start: new Date(now - 7 * 24 * 60 * 60 * 1000), periodId: '7d' },
+            { id: 'bt-30d', start: new Date(now - 30 * 24 * 60 * 60 * 1000), periodId: '30d' },
+            { id: 'bt-all', start: null, periodId: 'all' }
+        ];
+        for (var pi = 0; pi < periods.length; pi++) {
+            var period = periods[pi];
+            var filtered = period.start ? closed.filter(function(p) { var ct = getPositionCloseTime(p); return ct && ct >= period.start; }) : closed;
+            var netPnl = 0, grossPnl = 0, totalFees = 0, count = 0;
+            for (var i = 0; i < filtered.length; i++) {
+                var p = filtered[i];
+                var inv = getPositionInvestment(p);
+                if (!inv || inv <= 0 || !isFinite(inv)) continue;
+                var rawPnl = getPositionPnl(p);
+                if (!isFinite(rawPnl)) continue;
+                var returnPct = rawPnl / inv;
+                var ourPnl = returnPct * amount;
+                var walletFee = calcPositionFee(p);
+                var fee = walletFee * (amount / inv);
+                grossPnl += ourPnl;
+                netPnl += (returnPct - 0.05) * amount - fee;
+                count++;
+            }
+            var netRoi = amount > 0 ? (netPnl / amount) * 100 : 0;
+            var avgRoi = count > 0 ? netRoi / count : 0;
+            var valEl = document.getElementById(period.id);
+            if (valEl) {
+                valEl.innerText = (netPnl >= 0 ? '+' : '') + formatCurrency(netPnl);
+                valEl.className = 'bt-value ' + (netPnl >= 0 ? 'positive' : 'negative');
+            }
+            var roiEl = document.getElementById(period.id + '-roi');
+            if (roiEl) {
+                roiEl.innerText = (avgRoi >= 0 ? '+' : '') + avgRoi.toFixed(1) + '%';
+                roiEl.className = 'bt-roi ' + (avgRoi >= 0 ? 'positive' : 'negative');
+            }
+            var grossEl = document.getElementById(period.id + '-gross');
+            if (grossEl) {
+                grossEl.innerText = (grossPnl >= 0 ? '+' : '') + formatCurrency(grossPnl);
+                grossEl.className = 'bt-gross-val ' + (grossPnl >= 0 ? 'positive' : 'negative');
+            }
+            var tradesEl = document.getElementById(period.id + '-trades');
+            if (tradesEl) tradesEl.innerText = count + ' закрытых';
+        }
+        var resultEl = document.getElementById('bt-result');
+        if (resultEl) {
+            resultEl.style.display = 'block';
+            resultEl.style.animation = 'none';
+            requestAnimationFrame(function() { resultEl.style.animation = 'fadeSlideIn 0.3s ease'; });
+        }
+    }
+
+    // === AI AGENT FOR WALLET ===
+    function getAIRemaining() {
+        try {
+            var raw = localStorage.getItem('wa_monthly_usage') || '0';
+            var used = parseInt(raw, 10) || 0;
+            return Math.max(0, 30 - used);
+        } catch(e) { return 30; }
+    }
+
+    function updateAIRemaining() {
+        var badge = document.getElementById('wa-ai-remaining-badge');
+        if (badge) badge.textContent = getAIRemaining();
+    }
+
+    function addAIMsg(content, role, prefix) {
+        prefix = prefix || 'ev';
+        var msgsEl = document.getElementById(prefix + '-ai-msgs');
+        if (!msgsEl) return;
+        var div = document.createElement('div');
+        div.className = prefix + '-ai-msg ' + prefix + '-ai-msg-' + role;
+        var formatted = role === 'ai' ? formatAI(content) : escHtml(content);
+        var plainText = content ? content.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'") : '';
+        div.innerHTML = ''
+            + '<div class="' + prefix + '-ai-msg-avatar">'
+            + (role === 'ai'
+                ? '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zm-1 14a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>'
+                : '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>')
+            + '</div>'
+            + '<div class="' + prefix + '-ai-msg-bubble">' + formatted + '<button class="poly-copy-btn" data-copy-text="' + escHtml(plainText.substring(0, 500)) + '" title="Копировать">📋</button></div>';
+        msgsEl.appendChild(div);
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+
+    function showAILoading(prefix) {
+        prefix = prefix || 'ev';
+        var msgsEl = document.getElementById(prefix + '-ai-msgs');
+        if (!msgsEl) return;
+        var div = document.createElement('div');
+        div.className = prefix + '-ai-msg ' + prefix + '-ai-msg-ai';
+        div.id = prefix + '-ai-loading';
+        div.innerHTML = ''
+            + '<div class="' + prefix + '-ai-msg-avatar"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zm-1 14a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg></div>'
+            + '<div class="' + prefix + '-ai-msg-bubble"><span class="' + prefix + '-ai-dots"><span>.</span><span>.</span><span>.</span></span></div>';
+        msgsEl.appendChild(div);
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+
+    function hideAILoading(prefix) {
+        prefix = prefix || 'ev';
+        var el = document.getElementById(prefix + '-ai-loading');
+        if (el) el.remove();
+    }
+
+    async function runWalletAnalysis() {
+        if (_waRunning) return;
+        if (!currentStats) { addAIMsg('❌ Нет данных кошелька. Сначала выполните поиск.', 'ai', 'wa'); return; }
+        _waRunning = true;
+        var sendBubble = document.getElementById('wa-ai-send-bubble');
+        if (sendBubble) sendBubble.classList.add('disabled');
+
+        var s = currentStats;
+        var walletAddr = s.walletAddress || 'неизвестен';
+        var ctx = 'Ты профессиональный аналитик Polymarket. СЕЙЧАС ' + new Date().getFullYear() + ' ГОД. Анализируй данные кошелька трейдера и дай развёрнутый анализ на русском.\n\n';
+        ctx += 'ДАННЫЕ КОШЕЛЬКА: ' + walletAddr + '\n';
+        ctx += 'Всего сделок: ' + (s.totalPositions || 0) + '\n';
+        ctx += 'Общий Win Rate: ' + (s.winrate || 0) + '%\n';
+        ctx += 'Побед: ' + (s.totalWins || 0) + ', Поражений: ' + (s.totalLosses || 0) + ', Нейтрально: ' + (s.neutralCount || 0) + '\n';
+        ctx += 'Whale Win Rate: ' + (s.whaleWr || 0) + '%\n';
+        ctx += 'Whale входов: ' + (s.whaleCount || 0) + '\n';
+        ctx += 'Активных позиций: ' + (s.openPositions ? s.openPositions.length : 0) + '\n';
+        ctx += 'Закрытых позиций: ' + (s.closedMarkets ? s.closedMarkets.length : 0) + '\n';
+        ctx += 'Net PnL: ' + (s.netPnl !== undefined ? '$' + s.netPnl.toFixed(2) : '—') + '\n';
+        ctx += 'Объективный PnL: ' + (s.realizedClosedPnl !== undefined ? '$' + s.realizedClosedPnl.toFixed(2) : '—') + '\n';
+        ctx += 'PnL до комиссий: ' + (s.resolvedPnlBeforeFees !== undefined ? '$' + s.resolvedPnlBeforeFees.toFixed(2) : '—') + '\n';
+        ctx += 'PnL после комиссий: ' + (s.resolvedPnlAfterFees !== undefined ? '$' + s.resolvedPnlAfterFees.toFixed(2) : '—') + '\n';
+        ctx += 'Уплаченные комиссии: ' + (s.totalFees !== undefined ? '$' + s.totalFees.toFixed(2) : '—') + '\n';
+        ctx += 'Открытый PnL: ' + (s.openPnl !== undefined ? '$' + s.openPnl.toFixed(2) : '—') + '\n';
+        ctx += 'Закрытый убыток: ' + (s.realizedLoss !== undefined ? '$' + s.realizedLoss.toFixed(2) : '—') + '\n\n';
+        ctx += 'ВАЖНЫЕ ОГРАНИЧЕНИЯ:\n';
+        ctx += '- ТЫ НЕ ВИДИШЬ скриншоты, изображения или графики. НЕ проси пользователя прислать их.\n';
+        ctx += '- ТЫ НЕ ОТКРЫВАЕШЬ ссылки сам.\n';
+        ctx += '- Используй ТОЛЬКО те данные, что уже есть в контексте.\n';
+        ctx += '- Форматируй ответ с **жирным** для ключевых цифр.\n';
+        ctx += '- Структурируй ответ: общий обзор, статистика, качество торговли, вывод.\n';
+        ctx += '\nОФОРМЛЕНИЕ ОТВЕТА (СТРОГО):\n';
+        ctx += 'Первая строка — краткий вердикт (1 предложение, максимум 2 строки). После вердикта — пустая строка. Затем — полный детальный анализ.\n';
+
+        addAIMsg('🔍 Анализирую кошелёк...', 'user', 'wa');
+        showAILoading('wa');
+
+        try {
+            var res = await callAI([
+                { role: 'system', content: 'Ты профессиональный аналитик крипто-трейдинга на Polymarket. Отвечай на русском, структурированно, с **жирным** выделением ключевых цифр.' },
+                { role: 'user', content: ctx }
+            ]);
+            hideAILoading('wa');
+            var summaryText = res;
+            var detailText = '';
+            var splitIdx = res.indexOf('\n\n');
+            if (splitIdx > 0 && splitIdx < 500) {
+                summaryText = res.substring(0, splitIdx).trim();
+                detailText = res.substring(splitIdx + 2).trim();
+            }
+            var msgsWa = document.getElementById('wa-ai-msgs');
+            if (msgsWa) {
+                var msgDiv = document.createElement('div');
+                msgDiv.className = 'wa-ai-msg wa-ai-msg-ai';
+                var sf = formatAI(summaryText);
+                var df = detailText ? formatAI(detailText) : '';
+                var plainForCopy = (summaryText + '\n' + detailText).replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                msgDiv.innerHTML = ''
+                    + '<div class="wa-ai-msg-avatar"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zm-1 14a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg></div>'
+                    + '<div class="wa-ai-msg-bubble">'
+                    +   '<div class="wa-ai-msg-summary">' + sf + '</div>'
+                    +   (df ? '<div class="wa-ai-msg-detail" style="display:none">' + df + '</div>' : '')
+                    +   (df ? '<button class="wa-ai-toggle-detail">Подробнее →</button>' : '')
+                    +   '<button class="poly-copy-btn" data-copy-text="' + escHtml(plainForCopy.substring(0, 2000)) + '" title="Копировать">📋</button>'
+                    + '</div>';
+                msgsWa.appendChild(msgDiv);
+                msgsWa.scrollTop = msgsWa.scrollHeight;
+                if (df) {
+                    msgDiv.querySelector('.wa-ai-toggle-detail').addEventListener('click', function() {
+                        var detailEl = msgDiv.querySelector('.wa-ai-msg-detail');
+                        var toggleBtn = this;
+                        if (detailEl.style.display === 'none') {
+                            detailEl.style.display = 'block';
+                            toggleBtn.textContent = 'Свернуть ↑';
+                        } else {
+                            detailEl.style.display = 'none';
+                            toggleBtn.textContent = 'Подробнее →';
+                        }
+                    });
+                }
+            }
+            updateAIRemaining();
+        } catch (e) {
+            hideAILoading('wa');
+            addAIMsg('❌ Ошибка AI: ' + e.message, 'ai', 'wa');
+        }
+        _waRunning = false;
+        if (sendBubble) sendBubble.classList.remove('disabled');
+    }
+
+    function initWalletAI() {
+        var sendBubble = document.getElementById('wa-ai-send-bubble');
+        if (!sendBubble || sendBubble._waInit) return;
+        sendBubble._waInit = true;
+        var header = document.getElementById('wa-ai-header');
+        var body = document.getElementById('wa-ai-body');
+        if (header && body) {
+            header.addEventListener('click', function(e) {
+                if (e.target.closest('.wa-ai-header-title') || e.target.closest('.wa-ai-header-right')) {
+                    var isHidden = body.style.display === 'none';
+                    body.style.display = isHidden ? 'block' : 'none';
+                    var icon = header.querySelector('.wa-ai-toggle-icon');
+                    if (icon) icon.style.transform = isHidden ? '' : 'rotate(-90deg)';
+                }
+            });
+        }
+        sendBubble.addEventListener('click', runWalletAnalysis);
+        updateAIRemaining();
     }
 
     // ====================== TRADE TAB ======================

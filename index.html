@@ -173,6 +173,7 @@
                                 </div>
                                 <div class="header-actions">
                                     <button class="icon-btn" id="addFavoriteBtn" title="Add to favorites"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27z"/></svg></button>
+                                    <button class="icon-btn" id="addTrackerBtn" title="Add to tracker"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-7-2l-3-3h2.5v-5h1v5H15z"/></svg></button>
                                     <button class="icon-btn" id="copyAddrBtn" title="Copy address"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
                                 </div>
                             </div>
@@ -186,9 +187,193 @@
                             <div class="pnl-value" id="pnl-val">$0.00</div>
                         </div>
                         <div class="wallet-strength-card" id="wallet-strength-card"></div>
-                        <div class="stats-grid" id="statsGrid"></div>
-                        <div class="details-grid" id="detailsGrid"></div>
-                        <div id="wallet-history"></div>
+                    </div>
+                    <div class="stats-info-modal-overlay" id="statsInfoOverlay" style="display:none">
+                        <div class="stats-info-modal" id="statsInfoModal">
+                            <div class="stats-info-modal-header">
+                                <span class="stats-info-modal-title">Что означают карточки?</span>
+                                <button class="stats-info-modal-close" id="statsInfoClose"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+                            </div>
+                            <div class="stats-info-modal-body">
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg></div><div class="sim-text"><strong>Всего сделок</strong><span>Общее количество сделок — главный показатель опыта. Чем больше сделок, тем статистика достовернее. Менее 10-20 сделок не дают объективной картины.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm-2-3.5l6-4.5-6-4.5v9z"/></svg></div><div class="sim-text"><strong>Общий WR</strong><span>Win Rate — процент прибыльных сделок. Высокий WR (>65%) говорит о дисциплинированном трейдере. Низкий — о склонности к риску или сырой стратегии.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon positive-bg-sm"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div><div class="sim-text"><strong>Закрыто в плюс</strong><span>Количество прибыльных позиций. Полезно смотреть в паре с PnL — можно много мелких побед при одной крупной неудаче.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon neutral-bg-sm"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 13H5v-2h14v2z"/></svg></div><div class="sim-text"><strong>PNL = 0</strong><span>Сделки «в ноль» — трейдер вышел без потери, но и без профита. Частое явление при торговле с минимальной маржой или преждевременном выходе.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon negative-bg-sm"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div><div class="sim-text"><strong>Закрыто в минус</strong><span>Убыточные позиции. Ключевое — соотношение с прибыльными: если убытков больше, чем побед, стоит присмотреться к управлению рисками.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h-2v6h2V7zm0 8h-2v2h2v-2z"/></svg></div><div class="sim-text"><strong>Whale WR</strong><span>Win Rate на крупных сделках (>$20K). Высокий whale WR при достаточном количестве входов — признак уверенного трейдера, работающего на серьёзные объёмы.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11.5 17.1c-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.29 4.05 2.57.64 3.21 1.34 3.21 2.38 0 1.17-1.02 1.9-2.79 1.9z"/></svg></div><div class="sim-text"><strong>Whale входов</strong><span>Количество крупных входов (>$20K). Много whale-сделок при хорошем WR означают, что трейдер не боится заходить большими суммами и делает это осознанно.</span></div></div>
+                                <div class="sim-divider"></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 19h2V9H5v10zm4 0h2V5H9v14zm4 0h2v-7h-2v7zm4 0h2v-4h-2v4z"/></svg></div><div class="sim-text"><strong>PNL до комиссий</strong><span>Прибыль/убыток по закрытым позициям без учёта комиссий. Показывает, насколько удачно трейдер выбирал рынки, но не учитывает издержки.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 19h2v-4H5v4zm4 0h2v-7H9v7zm4 0h2V9h-2v10zm4 0h2V5h-2v14z"/></svg></div><div class="sim-text"><strong>PNL после комиссий</strong><span>Реальная прибыль за вычетом всех комиссий. Именно эту цифру трейдер фактически заработал. Если после комиссий PnL заметно ниже — трейдер делает много мелких сделок, съедающих прибыль.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11.5 17.1c-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.29 4.05 2.57.64 3.21 1.34 3.21 2.38 0 1.17-1.02 1.9-2.79 1.9z"/></svg></div><div class="sim-text"><strong>Уплаченные комиссии</strong><span>Общая сумма комиссий. Высокие комиссии при малом PnL — красный флаг: трейдер либо слишком часто торгует, либо использует неэффективную стратегию.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></div><div class="sim-text"><strong>Открытый PNL</strong><span>Текущий нереализованный PnL по открытым позициям. Может сильно меняться — это не финальный результат, а моментальный снимок ситуации в реальном времени.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"/></svg></div><div class="sim-text"><strong>Стоимость открытых</strong><span>Общая сумма средств, замороженных в открытых позициях. Показывает, какой частью капитала трейдер активно управляет в данный момент.</span></div></div>
+                                <div class="sim-item"><div class="sim-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div><div class="sim-text"><strong>Закрытый убыток</strong><span>Суммарный реализованный убыток по проигранным позициям. Полезно сравнивать с прибылью: если убыток >50% от прибыли — стоит задуматься о стоп-лоссах.</span></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wa-section" id="stats-section">
+                        <div class="stats-info-bar">
+                            <span class="stats-info-title">Статистика кошелька</span>
+                            <button class="stats-info-btn" id="statsInfoBtn" title="Что означают карточки?">
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                            </button>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stats-card"><div class="sc-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg></div><span class="stats-label">Всего сделок</span><span class="stats-value" id="total-trades">0</span></div>
+                            <div class="stats-card"><div class="sc-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm-2-3.5l6-4.5-6-4.5v9z"/></svg></div><span class="stats-label">Общий WR</span><span class="stats-value" id="wr-val">0%</span></div>
+                        </div>
+                        <div class="stats-grid-three">
+                            <div class="stats-card"><div class="sc-icon positive-bg"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></div><span class="stats-label">Закрыто в плюс</span><span class="stats-value positive" id="wins-count">0</span></div>
+                            <div class="stats-card"><div class="sc-icon neutral-bg"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 13H5v-2h14v2z"/></svg></div><span class="stats-label">PNL = 0</span><span class="stats-value" id="neutral-count">0</span></div>
+                            <div class="stats-card"><div class="sc-icon negative-bg"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></div><span class="stats-label">Закрыто в минус</span><span class="stats-value negative" id="loss-count">0</span></div>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stats-card"><div class="sc-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h-2v6h2V7zm0 8h-2v2h2v-2z"/></svg></div><span class="stats-label">Whale WR</span><span class="stats-value" id="whale-wr">0%</span></div>
+                            <div class="stats-card"><div class="sc-icon"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11.5 17.1c-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.29 4.05 2.57.64 3.21 1.34 3.21 2.38 0 1.17-1.02 1.9-2.79 1.9z"/></svg></div><span class="stats-label">Whale входов</span><span class="stats-value" id="whale-count">0</span></div>
+                        </div>
+                        <div class="section-divider"></div>
+                        <div class="details-grid">
+                            <div class="detail-card"><div class="dc-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M5 19h2V9H5v10zm4 0h2V5H9v14zm4 0h2v-7h-2v7zm4 0h2v-4h-2v4z"/></svg></div><span class="stats-label">PNL до комиссий</span><span class="stats-value" id="pnl-before-fees">$0.00</span></div>
+                            <div class="detail-card"><div class="dc-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M5 19h2v-4H5v4zm4 0h2v-7H9v7zm4 0h2V9h-2v10zm4 0h2V5h-2v14z"/></svg></div><span class="stats-label">PNL после комиссий</span><span class="stats-value" id="pnl-after-fees">$0.00</span></div>
+                            <div class="detail-card full-width"><div class="dc-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11.5 17.1c-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.29 4.05 2.57.64 3.21 1.34 3.21 2.38 0 1.17-1.02 1.9-2.79 1.9z"/></svg></div><span class="stats-label">Уплаченные комиссии</span><span class="stats-value" id="total-fees">$0.00</span></div>
+                            <div class="detail-card"><div class="dc-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></div><span class="stats-label">Открытый PNL</span><span class="stats-value" id="open-pnl-net">$0.00</span></div>
+                            <div class="detail-card"><div class="dc-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"/></svg></div><span class="stats-label">Стоимость открытых</span><span class="stats-value" id="open-pnl">$0.00</span></div>
+                            <div class="detail-card full-width"><div class="dc-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div><span class="stats-label">Закрытый убыток</span><span class="stats-value negative" id="total-loss">$0.00</span></div>
+                        </div>
+                    </div>
+                    <div class="wa-section" id="wa-ai-section">
+                        <div class="wa-ai-section">
+                            <div class="wa-ai-header" id="wa-ai-header" style="cursor:pointer">
+                                <div class="wa-ai-header-title">
+                                    <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zm-1 14a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>
+                                    <span>AI-аналитик кошелька</span>
+                                    <span class="wa-ai-remaining-badge" id="wa-ai-remaining-badge">5</span>
+                                </div>
+                                <div class="wa-ai-header-right">
+                                    <svg class="wa-ai-toggle-icon" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+                                </div>
+                            </div>
+                            <div class="wa-ai-body" id="wa-ai-body">
+                                <div class="wa-ai-msgs" id="wa-ai-msgs">
+                                    <div class="wa-ai-msg wa-ai-msg-ai">
+                                        <div class="wa-ai-msg-avatar"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2zm-1 14a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg></div>
+                                        <div class="wa-ai-msg-bubble" id="wa-ai-send-bubble">Провести AI-анализ кошелька</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wa-section" id="backtest-section">
+                        <div class="backtest-section">
+                            <div class="bt-header">
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                                <span>Backtest</span>
+                            </div>
+                            <div class="bt-body">
+                                <div class="bt-input-group">
+                                    <div class="bt-input-label">Сумма копитрейда</div>
+                                    <div class="bt-input-row">
+                                        <div class="bt-input-wrap">
+                                            <span class="bt-input-prefix">$</span>
+                                            <input type="number" id="bt-amount" value="1000" min="100" step="100" placeholder="1000">
+                                        </div>
+                                        <button class="bt-calc-btn" id="bt-calculate">
+                                            <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-3.31 0-6-2.69-6-6c0-3.31 2.69-6 6-6h3l-4-4z"/></svg>
+                                            Run
+                                        </button>
+                                    </div>
+                                    <div class="bt-quick-amounts">
+                                        <button class="bt-qty-btn" data-amount="10">$10</button>
+                                        <button class="bt-qty-btn" data-amount="50">$50</button>
+                                        <button class="bt-qty-btn" data-amount="100">$100</button>
+                                        <button class="bt-qty-btn" data-amount="500">$500</button>
+                                        <button class="bt-qty-btn" data-amount="1000">$1000</button>
+                                    </div>
+                                </div>
+                                <div class="bt-results" id="bt-result" style="display:none">
+                                    <div class="bt-grid">
+                                        <div class="bt-card">
+                                            <div class="bt-card-top">
+                                                <span class="bt-label">24H</span>
+                                                <span class="bt-roi" id="bt-24h-roi">0.0%</span>
+                                            </div>
+                                            <div class="bt-value" id="bt-24h">$0.00</div>
+                                            <div class="bt-meta">
+                                                <span class="bt-trades" id="bt-24h-trades">0 сделок</span>
+                                            </div>
+                                            <div class="bt-gross">
+                                                <span class="bt-gross-label">до комиссий</span>
+                                                <span class="bt-gross-val" id="bt-24h-gross">$0.00</span>
+                                            </div>
+                                        </div>
+                                        <div class="bt-card">
+                                            <div class="bt-card-top">
+                                                <span class="bt-label">7D</span>
+                                                <span class="bt-roi" id="bt-7d-roi">0.0%</span>
+                                            </div>
+                                            <div class="bt-value" id="bt-7d">$0.00</div>
+                                            <div class="bt-meta">
+                                                <span class="bt-trades" id="bt-7d-trades">0 сделок</span>
+                                            </div>
+                                            <div class="bt-gross">
+                                                <span class="bt-gross-label">до комиссий</span>
+                                                <span class="bt-gross-val" id="bt-7d-gross">$0.00</span>
+                                            </div>
+                                        </div>
+                                        <div class="bt-card">
+                                            <div class="bt-card-top">
+                                                <span class="bt-label">30D</span>
+                                                <span class="bt-roi" id="bt-30d-roi">0.0%</span>
+                                            </div>
+                                            <div class="bt-value" id="bt-30d">$0.00</div>
+                                            <div class="bt-meta">
+                                                <span class="bt-trades" id="bt-30d-trades">0 сделок</span>
+                                            </div>
+                                            <div class="bt-gross">
+                                                <span class="bt-gross-label">до комиссий</span>
+                                                <span class="bt-gross-val" id="bt-30d-gross">$0.00</span>
+                                            </div>
+                                        </div>
+                                        <div class="bt-card">
+                                            <div class="bt-card-top">
+                                                <span class="bt-label">All</span>
+                                                <span class="bt-roi" id="bt-all-roi">0.0%</span>
+                                            </div>
+                                            <div class="bt-value" id="bt-all">$0.00</div>
+                                            <div class="bt-meta">
+                                                <span class="bt-trades" id="bt-all-trades">0 сделок</span>
+                                            </div>
+                                            <div class="bt-gross">
+                                                <span class="bt-gross-label">до комиссий</span>
+                                                <span class="bt-gross-val" id="bt-all-gross">$0.00</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wa-section" id="history-section">
+                        <div class="history-section">
+                            <div class="sub-tabs" id="history-subtabs">
+                                <button class="sub-tab active" id="active-tab">Активные <span id="active-count">0</span></button>
+                                <button class="sub-tab" id="closed-tab">Закрытые <span id="closed-count">0</span></button>
+                            </div>
+                            <div class="history-filters" id="history-filters">
+                                <div class="hf-inner">
+                                    <button class="hf-btn active" data-filter="all">Все</button>
+                                    <button class="hf-btn" data-filter="plus">+ Прибыль</button>
+                                    <button class="hf-btn" data-filter="minus">− Убыток</button>
+                                    <span class="hf-divider"></span>
+                                    <button class="hf-btn hf-whale" data-filter="whale" title="Только whale сделки ($20K+)">🐋</button>
+                                    <span class="hf-divider"></span>
+                                    <button class="hf-sort" data-sort="pnl-asc" title="По возрастанию PnL">↑</button>
+                                    <button class="hf-sort" data-sort="pnl-desc" title="По убыванию PnL">↓</button>
+                                </div>
+                            </div>
+                            <div id="history-list"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="nav-tab-content" id="trade-tab"><div id="trade-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Торговый терминал загружается...</p></div></div>
@@ -206,6 +391,48 @@
                 <div class="nav-tab-content" id="education-tab"><div id="education-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Обучающая платформа</p></div></div>
                 <div class="nav-tab-content" id="profile-tab"><div id="profile-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Профиль</p></div></div>
                 <div class="nav-tab-content" id="settings-tab"><div id="settings-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Настройки</p></div></div>
+            </div>
+
+            <!-- Tracker modal -->
+            <div class="fav-modal-overlay" id="trkModalOverlay" style="display:none">
+                <div class="fav-modal">
+                    <div class="fav-modal-header">
+                        <h3 id="trkModalTitle">Добавить в трекер</h3>
+                        <button class="fav-modal-close" id="trkModalClose">
+                            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                        </button>
+                    </div>
+                    <div class="fav-modal-body">
+                        <div class="fav-field">
+                            <label>Название</label>
+                            <input type="text" id="trkName" placeholder="Например: Китовый кошелёк">
+                        </div>
+                        <div class="fav-field">
+                            <label>Адрес кошелька</label>
+                            <input type="text" id="trkAddress" placeholder="0x..." spellcheck="false" readonly>
+                        </div>
+                        <div class="fav-field">
+                            <label>Тип сделки</label>
+                            <select id="trkType" class="trk-select">
+                                <option value="entry">Вход (Entry)</option>
+                                <option value="exit">Выход (Exit)</option>
+                            </select>
+                        </div>
+                        <div class="fav-field">
+                            <label>Выбор (исход)</label>
+                            <input type="text" id="trkSelection" placeholder="yes / no / имя игрока / ...">
+                        </div>
+                        <div class="fav-field">
+                            <label>Комментарий</label>
+                            <textarea id="trkComment" placeholder="Заметка (необязательно)" rows="2"></textarea>
+                        </div>
+                    </div>
+                    <div class="fav-modal-footer">
+                        <button class="fav-btn fav-btn-cancel" id="trkCancelBtn">Отмена</button>
+                        <button class="fav-btn fav-btn-save" id="trkSaveBtn">Сохранить</button>
+                    </div>
+                    <input type="hidden" id="trkEditId" value="">
+                </div>
             </div>
         </div>
     </div>
