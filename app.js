@@ -3276,7 +3276,7 @@
         var markets = ev && ev.markets ? ev.markets : [m];
         var isSingleMarket = markets.length === 1;
 
-        var html = '<div class="tr-terminal">';
+        var html = '<div class="tr-terminal"><div class="tr-terminal-main">';
 
         // 1. MODE BAR
         html += '<div class="tr-mode-bar">'
@@ -3740,8 +3740,10 @@
             + '<button class="tr-section-close" id="trWalletsClose">&times;</button></div>'
             + '<div id="trWalletsContent"><div class="tr-loading">' + (t('events.loading') || 'Loading...') + '</div></div></div>';
 
-        // 15. ORDER BOOK
-        html += '<div class="tr-ob-section" id="trObSection" style="display:none">'
+        html += '</div>'; // end tr-terminal-main
+
+        // 15. ORDER BOOK (right sidebar)
+        html += '<div class="tr-terminal-sidebar"><div class="tr-ob-section" id="trObSection" style="display:none">'
             + '<div class="tr-ob-header">'
             + '<span class="tr-ob-title"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> ' + (t('terminal.orderbook') || 'Order Book') + '</span>'
             + '<button class="tr-ob-refresh" id="trObRefresh">\u21bb</button>'
@@ -3756,7 +3758,7 @@
             + '<span class="tr-ob-ch-total"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> ' + (t('terminal.total') || 'Total') + '</span>'
             + '</div>'
             + '<div class="tr-ob-body" id="trObBody"><div class="tr-ob-loading">' + (t('events.loading') || 'Loading...') + '</div></div>'
-            + '</div>';
+            + '</div></div>'; // end tr-ob-section, tr-terminal-sidebar
 
         html += '</div>'; // end tr-terminal
 
