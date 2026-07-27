@@ -487,16 +487,78 @@
     }
 
     function updateProfileUI() {
-        var nameEl = $('profile-name');
-        var ageEl = $('account-age');
         var auth = getFbAuthREST();
-        if (nameEl && auth) nameEl.textContent = auth.email || 'User';
-        if (ageEl && currentUserData) {
-            var created = currentUserData.createdAt;
-            if (created) {
-                var days = Math.floor((Date.now() - (typeof created === 'number' ? created : new Date(created).getTime())) / 86400000);
-                ageEl.textContent = 'Активен ' + Math.max(1, days) + ' дн.';
+        var welcomeScreen = $('welcome-screen');
+        var hamburgerBtn = $('hamburgerBtn');
+        var wsGearBtn = $('wsGearBtn');
+        var settingsBtn = $('settingsBtn');
+        var authForms = $('profileAuthForms');
+        var loggedInEl = $('profileLoggedIn');
+        var tariffSection = $('profileTariffSection');
+        var sidebarMenu = $('sidebarMenu');
+
+        if (auth) {
+            if (welcomeScreen) welcomeScreen.classList.remove('ws-visible');
+            if (hamburgerBtn) hamburgerBtn.style.display = 'flex';
+            if (wsGearBtn) wsGearBtn.style.display = 'none';
+            if (settingsBtn) settingsBtn.style.display = 'flex';
+            var activeTab = document.querySelector('.nav-tab-content.active');
+            if (!activeTab) {
+                var firstTab = document.querySelector('.nav-tab-content');
+                if (firstTab) firstTab.classList.add('active');
             }
+            if (authForms) authForms.style.display = 'none';
+            if (loggedInEl) {
+                loggedInEl.style.display = 'block';
+                var heroEmail = $('profileHeroEmail');
+                if (heroEmail) heroEmail.textContent = auth.email;
+                var heroName = $('profileHeroName');
+                if (heroName) heroName.textContent = auth.displayName || (auth.email ? auth.email.split('@')[0] : 'User');
+                var avatarLetter = $('profileAvatarLetter');
+                if (avatarLetter) avatarLetter.textContent = (auth.displayName || auth.email || '?')[0].toUpperCase();
+                var dn = auth.displayName || (auth.email ? auth.email.split('@')[0] : '');
+                var loginInput = $('profileLoginInput');
+                if (loginInput) { loginInput.value = dn; loginInput.placeholder = dn || 'Логин'; }
+                if (auth.localId && (!auth.displayName || auth.displayName === (auth.email ? auth.email.split('@')[0] : ''))) {
+                    fbGetREST('users', auth.localId).then(function(doc) {
+                        if (doc && doc.data) {
+                            var stored = doc.data.nick || doc.data.displayName || null;
+                            if (stored) {
+                                auth = getFbAuthREST();
+                                if (auth) { auth.displayName = stored; setFbAuthREST(auth); }
+                                if (heroName) heroName.textContent = stored;
+                                if (avatarLetter) avatarLetter.textContent = stored[0].toUpperCase();
+                                if (loginInput) { loginInput.value = stored; loginInput.placeholder = stored; }
+                            }
+                        }
+                    }).catch(function(){});
+                }
+            }
+            if (tariffSection) tariffSection.style.display = 'block';
+            renderMyWallets();
+            initTelegramLink();
+            var heroLogoutBtn = $('profileHeroLogout');
+            if (heroLogoutBtn) {
+                heroLogoutBtn.onclick = function() {
+                    fbSignOutREST();
+                    updateProfileUI();
+                    initSettingsTab();
+                };
+            }
+        } else {
+            if (welcomeScreen) welcomeScreen.classList.add('ws-visible');
+            if (hamburgerBtn) hamburgerBtn.style.display = 'none';
+            if (wsGearBtn) wsGearBtn.style.display = 'flex';
+            if (settingsBtn) settingsBtn.style.display = 'none';
+            document.querySelectorAll('.nav-tab-content').forEach(function(c) { c.classList.remove('active'); });
+            if (sidebarMenu) sidebarMenu.classList.remove('open');
+            if (authForms) authForms.style.display = 'block';
+            if (loggedInEl) loggedInEl.style.display = 'none';
+            if (tariffSection) tariffSection.style.display = 'none';
+        }
+        if (auth) initProfileEdit();
+        if (auth) {
+            loadTariffFromFirestore().then(renderTariffPlans).catch(renderTariffPlans);
         }
     }
 
@@ -4873,121 +4935,674 @@
 
     // ====================== PROFILE TAB ======================
     function initProfileTab() {
-        var content = $('profile-content');
-        if (!content) return;
         var auth = getFbAuthREST();
-        if (!auth) { content.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-secondary)">Не авторизован</div>'; return; }
-
-        var email = auth.email || '—';
-        var plan = (currentUserData && currentUserData.tariff) || 'basic';
-        var planNames = { basic: 'Базовый', pro: 'PRO', apex: 'Apex' };
-        var initials = email.charAt(0).toUpperCase();
-
-        content.innerHTML = ''
-            + '<div style="padding:12px">'
-            + '<div class="profile-card" style="padding:20px;background:var(--card-bg-2);border:1px solid var(--border);border-radius:14px;text-align:center;margin-bottom:16px">'
-            + '<div class="profile-avatar" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#4C7F6E,#3b6658);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;font-weight:800;color:#fff">' + initials + '</div>'
-            + '<div class="profile-name" style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:4px">' + escHtml(email) + '</div>'
-            + '<div class="profile-email" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">' + escHtml(email) + '</div>'
-            + '<div class="profile-plan-badge" style="display:inline-block;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(76,127,110,0.15);color:#4C7F6E">' + planNames[plan] || plan + '</div>'
-            + '<button class="logout-btn" id="profileLogoutBtn" style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid rgba(248,81,73,0.3);border-radius:10px;background:rgba(248,81,73,0.08);color:#f85149;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;justify-content:center;margin-top:16px">'
-            + '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11 7L9.6 8.4l2.6 2.6H2v2h10.2l-2.6 2.6L11 17l5-5-5-5zm9 12h-8v2h8c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-8v2h8v14z"/></svg>'
-            + 'Выйти</button>'
-            + '</div>'
-            + renderTariffPlans(plan)
-            + '</div>';
-
-        var logoutBtn = $('profileLogoutBtn');
-        if (logoutBtn) logoutBtn.onclick = function() { fbSignOutREST(); handleAuth(null); };
+        if (!auth) return;
+        updateProfileUI();
+        loadTariffFromFirestore().then(renderTariffPlans).catch(renderTariffPlans);
     }
 
-    function renderTariffPlans(currentPlan) {
-        var html = '<div style="margin-top:16px">';
-        html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">Тарифы</div>';
-        Object.keys(TARIFFS).forEach(function(key) {
-            var t = TARIFFS[key];
-            var isActive = key === currentPlan;
-            html += '<div style="padding:14px;background:var(--card-bg-2);border:1px solid ' + (isActive ? 'var(--accent)' : 'var(--border)') + ';border-radius:12px;margin-bottom:8px;' + (isActive ? 'box-shadow:0 0 0 1px var(--accent-glow)' : '') + '">';
-            html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
-            html += '<span style="font-weight:800;font-size:14px;color:var(--text)">' + escHtml(t.name) + '</span>';
-            if (isActive) html += '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--accent);color:#fff;font-weight:700">Активен</span>';
-            html += '</div>';
-            html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">' + escHtml(t.subtitle) + '</div>';
-            html += '<ul style="list-style:none;padding:0;margin:0">';
-            t.features.slice(0, 5).forEach(function(f) {
-                html += '<li style="font-size:10px;color:var(--text-tertiary);padding:2px 0;display:flex;align-items:center;gap:6px">'
-                    + '<svg viewBox="0 0 16 16" width="10" height="10"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--accent)" stroke-width="1.3"/><path d="M5 8l2 2 4-4" stroke="var(--accent)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-                    + escHtml(f) + '</li>';
-            });
-            html += '</ul>';
-            if (t.features.length > 5) {
-                html += '<div style="font-size:9px;color:var(--text-tertiary);margin-top:4px">+ ещё ' + (t.features.length - 5) + ' возможностей</div>';
+    var _tariffPeriod = 'week';
+    var _tariffShowFree = false;
+
+    function renderTariffPlans() {
+        var tariff = getTariff();
+        var currentPlan = tariff.plan || 'basic';
+        var planName = TARIFFS[currentPlan] ? TARIFFS[currentPlan].name : 'Базовый';
+        var badge = $('profileTariffBadge');
+        if (badge) badge.textContent = planName;
+        var badge2 = $('profileTariffBadge2');
+        if (badge2) badge2.textContent = planName;
+        var refSection = $('profileReferralSection');
+        if (refSection) {
+            var show = currentPlan === 'pro' || currentPlan === 'apex';
+            refSection.style.display = show ? 'block' : 'none';
+            if (show) {
+                var refLevel = $('profileRefLevel');
+                if (refLevel) refLevel.textContent = planName;
+                var promoInput = $('profilePromoCodeDisplay');
+                if (promoInput && (promoInput.value === 'polywin-...' || !promoInput.dataset.loaded)) {
+                    promoInput.dataset.loaded = '1';
+                    var auth = getFbAuthREST();
+                    if (auth && auth.localId) {
+                        fbGetREST('users', auth.localId).then(function(doc) {
+                            if (doc && doc.exists && doc.data) {
+                                var data = doc.data;
+                                var nick = data.nick || data.displayName || auth.displayName || (auth.email ? auth.email.split('@')[0] : '');
+                                if (nick) {
+                                    var code = 'polywin-' + nick;
+                                    promoInput.value = code;
+                                }
+                                updateReferralRank(currentPlan, data.referralCount || 0);
+                            }
+                        }).catch(function(){});
+                    }
+                } else if (show) {
+                    var auth = getFbAuthREST();
+                    if (auth && auth.localId) {
+                        fbGetREST('users', auth.localId).then(function(doc) {
+                            var count = (doc && doc.exists && doc.data) ? (doc.data.referralCount || 0) : 0;
+                            updateReferralRank(currentPlan, count);
+                        }).catch(function(){});
+                    }
+                }
+                var copyBtn = $('profilePromoCodeCopyBtn');
+                if (copyBtn) {
+                    copyBtn.onclick = function() {
+                        var input = $('profilePromoCodeDisplay');
+                        if (input && input.value) {
+                            var ta = document.createElement('textarea');
+                            ta.value = input.value;
+                            ta.style.position = 'fixed';
+                            ta.style.opacity = '0';
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                            setProfileMsg('Промокод скопирован', true);
+                        }
+                    };
+                }
             }
-            html += '</div>';
+        }
+        var container = $('profileTariffPlans');
+        if (!container) return;
+
+        var periodKeys = ['week', 'month', 'quarter', 'year'];
+        var periodLabels = { week: 'Еженедельно', month: 'Ежемесячно', quarter: 'Ежеквартально', year: 'Ежегодно' };
+        var periodSuffix = { week: '/нед', month: '/мес', quarter: '/кв', year: '/год' };
+        var periodDiscounts = { week: 0, month: 10, quarter: 30, year: 45 };
+
+        var selectorHtml = '<div class="t-period-selector">';
+        periodKeys.forEach(function(k) {
+            var active = k === _tariffPeriod ? ' active' : '';
+            var disc = periodDiscounts[k];
+            selectorHtml += '<button class="t-period-btn' + active + '" data-period="' + k + '">'
+                + periodLabels[k]
+                + (disc > 0 ? ' <span class="t-period-discount">−' + disc + '%</span>' : '')
+                + '</button>';
         });
-        html += '</div>';
-        return html;
+        selectorHtml += '</div>';
+
+        var showFree = _tariffPeriod === 'week' ? _tariffShowFree : false;
+        var tariffKeys = Object.keys(TARIFFS).filter(function(k) {
+            if (k === 'basic') return showFree;
+            return true;
+        });
+
+        var toggleHtml = '';
+        if (_tariffPeriod === 'week') {
+            toggleHtml = '<div class="t-toggle-free">' +
+                '<button class="t-toggle-free-btn" id="t-toggle-free-btn">' +
+                    (_tariffShowFree ? '− Скрыть бесплатные тарифы' : '+ Показать бесплатные тарифы') +
+                '</button></div>';
+        }
+
+        container.innerHTML = selectorHtml + toggleHtml + tariffKeys.map(function(key) {
+            var p = TARIFFS[key];
+            var isActive = key === currentPlan;
+            var isFree = p.priceWeek === 0;
+            var canSelect = true;
+            var discount = periodDiscounts[_tariffPeriod] || 0;
+            var weekPrice = p.priceWeek || 0;
+            var periodMultiplier = { week: 1, month: 4.33, quarter: 13, year: 52 };
+            var mult = periodMultiplier[_tariffPeriod] || 1;
+            var rawPrice = weekPrice * mult;
+            var price = discount > 0 ? Math.round(rawPrice * (1 - discount / 100)) : Math.round(rawPrice);
+            return '<div class="t-plan' + (isActive ? ' t-plan-active' : '') + ' t-plan-' + key + '">'
+                + '<div class="t-plan-bg"></div>'
+                + '<div class="t-plan-glow"></div>'
+                + '<div class="t-plan-shine"></div>'
+                + '<div class="t-plan-body">'
+                    + '<div class="t-plan-header">'
+                        + '<div class="t-plan-name">' + p.name + '</div>'
+                        + '<div class="t-plan-sub">' + p.subtitle + '</div>'
+                    + '</div>'
+                    + '<div class="t-plan-price">'
+                        + (isFree
+                            ? '<div class="t-plan-prices"><div class="t-plan-price-row"><span class="t-plan-price-val t-plan-price-free">Бессрочно</span></div></div>'
+                            : '<div class="t-plan-prices">'
+                                + '<div class="t-plan-price-row">'
+                                    + '<span class="t-plan-price-val">$' + price + '</span>'
+                                    + '<span class="t-plan-price-per">' + periodSuffix[_tariffPeriod] + '</span>'
+                                + '</div>'
+                                + (discount > 0 ? '<div class="t-plan-price-row t-plan-price-save-row">'
+                                    + '<span class="t-plan-price-badge">−' + discount + '%</span>'
+                                + '</div>' : '')
+                              + '</div>')
+                    + '</div>'
+                    + (p.features.length ? '<ul class="t-plan-feats">' + p.features.map(function(f) {
+                        return '<li class="t-plan-feat">' + tariffIcon(f) + '<span>' + escHtml(f) + '</span></li>';
+                    }).join('') + '</ul>' : '')
+                + '</div>'
+                + '<div class="t-plan-action">'
+                    + (isActive
+                        ? '<div class="t-plan-current">✓ Текущий</div>'
+                        : (canSelect
+                            ? '<button class="t-plan-btn" data-plan="' + key + '">Выбрать ' + p.name + '</button>'
+                            : '<div class="t-plan-auto">Выдаётся автоматически</div>'))
+                + '</div>'
+            + '</div>';
+        }).join('');
+
+        container.querySelectorAll('.t-plan-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                var plan = this.dataset.plan;
+                setTariff(plan);
+                renderTariffPlans();
+                setProfileMsg('Тариф изменён на ' + TARIFFS[plan].name, true);
+            };
+        });
+        container.querySelectorAll('.t-period-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                _tariffPeriod = this.dataset.period;
+                renderTariffPlans();
+            };
+        });
+
+        var toggleBtn = $('t-toggle-free-btn');
+        if (toggleBtn) {
+            toggleBtn.onclick = function() {
+                _tariffShowFree = !_tariffShowFree;
+                renderTariffPlans();
+            };
+        }
+    }
+
+    // ====================== SETTINGS HELPERS ======================
+    var _settingsLangMap = {
+        ru: {
+            'theme.dark': 'Тёмная', 'theme.light': 'Светлая', 'theme.custom': 'Своя тема',
+            'customTheme.background': 'Фоновое изображение', 'customTheme.textColor': 'Цвет текста', 'customTheme.accentColor': 'Акцентный цвет',
+            'cancel': 'Отмена', 'save': 'Сохранить',
+            'tab.terminal': 'Торговля', 'tab.wallet': 'Анализ кошельков', 'tab.alerts': 'Алерты', 'tab.calls': 'Коллы',
+            'tab.favorites': 'Трекер и избранное', 'tab.myTrades': 'Мои сделки', 'tab.whale': 'Киты', 'tab.smartAlerts': 'Смарт-алерты',
+            'tab.scanner': 'Сканер', 'tab.xSentiment': 'X (Twitter)', 'tab.weather': 'Погода',
+            'tab.newsHub': 'Новости', 'tab.newMarket': 'Новые рынки', 'tab.education': 'Обучение', 'tab.profile': 'Профиль', 'tab.settings': 'Настройки',
+            'tab.trade': 'Торговля', 'tab.analysis': 'Аналитика',
+            'defaultTab': 'Раздел по умолчанию', 'visibility': 'Видимость разделов',
+            'visibility.allShown': 'Все показаны', 'visibility.hiddenCount': 'Скрыто {n}',
+            'notAuthorized': 'Не авторизован', 'authorized': 'Авторизован', 'logout': 'Выйти'
+        },
+        en: {
+            'theme.dark': 'Dark', 'theme.light': 'Light', 'theme.custom': 'Custom',
+            'customTheme.background': 'Background image', 'customTheme.textColor': 'Text color', 'customTheme.accentColor': 'Accent color',
+            'cancel': 'Cancel', 'save': 'Save',
+            'tab.terminal': 'Trade', 'tab.wallet': 'Wallet Analysis', 'tab.alerts': 'Alerts', 'tab.calls': 'Calls',
+            'tab.favorites': 'Tracker & Favorites', 'tab.myTrades': 'My Trades', 'tab.whale': 'Whales', 'tab.smartAlerts': 'Smart Alerts',
+            'tab.scanner': 'Scanner', 'tab.xSentiment': 'X (Twitter)', 'tab.weather': 'Weather',
+            'tab.newsHub': 'News', 'tab.newMarket': 'New Markets', 'tab.education': 'Education', 'tab.profile': 'Profile', 'tab.settings': 'Settings',
+            'tab.trade': 'Trade', 'tab.analysis': 'Analytics',
+            'defaultTab': 'Default tab', 'visibility': 'Menu visibility',
+            'visibility.allShown': 'All shown', 'visibility.hiddenCount': '{n} hidden',
+            'notAuthorized': 'Not authorized', 'authorized': 'Authorized', 'logout': 'Log out'
+        },
+        zh: {
+            'theme.dark': '深色', 'theme.light': '浅色', 'theme.custom': '自定义',
+            'customTheme.background': '背景图片', 'customTheme.textColor': '文字颜色', 'customTheme.accentColor': '强调色',
+            'cancel': '取消', 'save': '保存',
+            'tab.terminal': '交易', 'tab.wallet': '钱包分析', 'tab.alerts': '提醒', 'tab.calls': '喊单',
+            'tab.favorites': '收藏夹', 'tab.myTrades': '我的交易', 'tab.whale': '巨鲸', 'tab.smartAlerts': '智能提醒',
+            'tab.scanner': '扫描', 'tab.xSentiment': 'X (Twitter)', 'tab.weather': '天气',
+            'tab.newsHub': '新闻', 'tab.newMarket': '新市场', 'tab.education': '教育', 'tab.profile': '个人资料', 'tab.settings': '设置',
+            'tab.trade': '交易', 'tab.analysis': '分析',
+            'defaultTab': '默认选项卡', 'visibility': '菜单可见性',
+            'visibility.allShown': '全部显示', 'visibility.hiddenCount': '隐藏 {n}',
+            'notAuthorized': '未授权', 'authorized': '已授权', 'logout': '退出'
+        }
+    };
+
+    function settingsT(key) {
+        var lang = localStorage.getItem('polyLang') || 'ru';
+        return (_settingsLangMap[lang] && _settingsLangMap[lang][key]) || _settingsLangMap['ru'][key] || key;
+    }
+
+    function applyMenuTranslations() {
+        document.querySelectorAll('#sidebarMenu span[data-stkey]').forEach(function(el) {
+            el.textContent = settingsT(el.dataset.stkey);
+        });
+    }
+
+    function applySettingsTranslations() {
+        var container = document.getElementById('settings-tab');
+        if (!container) return;
+        container.querySelectorAll('[data-stkey]').forEach(function(el) {
+            el.textContent = settingsT(el.dataset.stkey);
+        });
+        applyMenuTranslations();
+    }
+
+    function buildSettingsDropdown(options, selectedValue, onChange) {
+        var wrap = document.createElement('div');
+        wrap.className = 'settings-cs';
+        var selected = options.find(function(o) { return o.value === selectedValue; }) || options[0];
+        wrap.innerHTML =
+            '<div class="settings-cs-trigger" tabindex="0">' +
+                '<span class="settings-cs-selected">' + (selected.icon||'') + '<span class="settings-cs-label">' + escHtml(selected.label) + '</span></span>' +
+                '<svg class="settings-cs-arrow" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>' +
+            '</div>' +
+            '<div class="settings-cs-dropdown">' +
+                options.map(function(o) {
+                    return '<div class="settings-cs-option' + (o.value === selectedValue ? ' active' : '') + '" data-value="' + o.value + '">' +
+                        (o.icon||'') + '<span>' + escHtml(o.label) + '</span>' +
+                        (o.value === selectedValue ? '<svg class="settings-cs-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' : '') +
+                    '</div>';
+                }).join('') +
+            '</div>';
+        var trigger = wrap.querySelector('.settings-cs-trigger');
+        var dropdown = wrap.querySelector('.settings-cs-dropdown');
+        function open() { dropdown.style.display = 'block'; trigger.classList.add('open'); }
+        function close() { dropdown.style.display = 'none'; trigger.classList.remove('open'); }
+        trigger.onclick = function(e) { e.stopPropagation(); if (dropdown.style.display === 'block') close(); else open(); };
+        dropdown.querySelectorAll('.settings-cs-option').forEach(function(el) {
+            el.onclick = function(e) { e.stopPropagation(); var val = this.dataset.value; close(); if (val !== selectedValue) onChange(val); };
+        });
+        document.addEventListener('click', function handler(e) { if (!wrap.contains(e.target)) close(); });
+        wrap.updateValue = function(val) {
+            selectedValue = val;
+            var match = options.find(function(o) { return o.value === val; });
+            var selEl = wrap.querySelector('.settings-cs-selected');
+            selEl.innerHTML = (match ? (match.icon||'') : '') + '<span class="settings-cs-label">' + escHtml(match ? match.label : val) + '</span>';
+            dropdown.querySelectorAll('.settings-cs-option').forEach(function(el) {
+                var isSel = el.dataset.value === val;
+                el.classList.toggle('active', isSel);
+                var check = el.querySelector('.settings-cs-check');
+                if (isSel && !check) el.insertAdjacentHTML('beforeend', '<svg class="settings-cs-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>');
+                else if (!isSel && check) check.remove();
+            });
+        };
+        close();
+        return wrap;
+    }
+
+    function applyCustomTheme() {
+        var isCustom = localStorage.getItem('polyCustomTheme') === 'true';
+        var sidebar = document.getElementById('poly-stats-sidebar');
+        if (!isCustom) {
+            if (sidebar) { sidebar.style.removeProperty('--custom-bg'); sidebar.style.removeProperty('--custom-text'); sidebar.style.removeProperty('--custom-accent'); }
+            return;
+        }
+        var data = JSON.parse(localStorage.getItem('polyCustomThemeData') || '{}');
+        if (sidebar) {
+            if (data.bg) sidebar.style.setProperty('--custom-bg', 'url(' + data.bg + ')');
+            if (data.text) sidebar.style.setProperty('--custom-text', data.text);
+            if (data.accent) sidebar.style.setProperty('--custom-accent', data.accent);
+        }
+    }
+    applyCustomTheme();
+
+    function applyMenuVisibility() {
+        var hidden = JSON.parse(localStorage.getItem('polyHiddenMenuItems') || '[]');
+        document.querySelectorAll('.menu-item').forEach(function(el) {
+            el.style.display = hidden.indexOf(el.dataset.tab) !== -1 ? 'none' : '';
+        });
+    }
+    applyMenuVisibility();
+
+    function openCustomThemeModal() {
+        var current = JSON.parse(localStorage.getItem('polyCustomThemeData') || '{"bg":"","text":"#e6edf3","accent":"#4C7F6E"}');
+        var overlay = document.createElement('div');
+        overlay.className = 'dtm-overlay';
+        var modal = document.createElement('div');
+        modal.className = 'dtm-modal';
+        modal.style.maxWidth = '420px';
+        modal.innerHTML =
+            '<div class="dtm-header">' +
+                '<span class="dtm-title">' + settingsT('theme.custom') + '</span>' +
+                '<button class="dtm-close" id="ctModalClose"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>' +
+            '</div>' +
+            '<div class="dtm-body" style="padding:16px">' +
+                '<div class="settings-cs-row">' +
+                    '<label class="settings-cs-label">' + settingsT('customTheme.background') + '</label>' +
+                    '<input type="file" accept="image/*" class="settings-cs-file" id="ctBgInput">' +
+                    (current.bg ? '<div class="settings-cs-preview" style="background:url(' + current.bg + ') center/cover;width:60px;height:40px;border-radius:6px;border:1px solid var(--border)"></div>' : '') +
+                '</div>' +
+                '<div class="settings-cs-row">' +
+                    '<label class="settings-cs-label">' + settingsT('customTheme.textColor') + '</label>' +
+                    '<input type="color" class="settings-cs-color" id="ctTextColor" value="' + current.text + '">' +
+                '</div>' +
+                '<div class="settings-cs-row">' +
+                    '<label class="settings-cs-label">' + settingsT('customTheme.accentColor') + '</label>' +
+                    '<input type="color" class="settings-cs-color" id="ctAccentColor" value="' + current.accent + '">' +
+                '</div>' +
+                '<div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">' +
+                    '<button class="settings-cs-cancel" id="ctCancel">' + settingsT('cancel') + '</button>' +
+                    '<button class="settings-cs-save" id="ctSave">' + settingsT('save') + '</button>' +
+                '</div>' +
+            '</div>';
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        function closeCt() { overlay.remove(); }
+        overlay.onclick = function(e) { if (e.target === overlay) closeCt(); };
+        modal.querySelector('#ctModalClose').onclick = closeCt;
+        document.getElementById('ctCancel').onclick = closeCt;
+        document.getElementById('ctSave').onclick = function() {
+            var bgInput = document.getElementById('ctBgInput');
+            var textColor = document.getElementById('ctTextColor').value;
+            var accentColor = document.getElementById('ctAccentColor').value;
+            function saveCt(bg) {
+                var data = { bg: bg, text: textColor, accent: accentColor };
+                localStorage.setItem('polyCustomThemeData', JSON.stringify(data));
+                localStorage.setItem('polyCustomTheme', 'true');
+                applyCustomTheme();
+                closeCt();
+            }
+            if (bgInput.files && bgInput.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function(e) { saveCt(e.target.result); };
+                reader.readAsDataURL(bgInput.files[0]);
+            } else {
+                saveCt(current.bg || '');
+            }
+        };
     }
 
     // ====================== SETTINGS TAB ======================
     function initSettingsTab() {
         var content = $('settings-content');
         if (!content) return;
-        var isLight = document.body.classList.contains('light-theme');
 
-        content.innerHTML = ''
-            + '<div style="padding:12px">'
-            + '<div style="margin-bottom:20px">'
-            + '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Внешний вид</div>'
-            + '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">Настройте отображение интерфейса</div>'
-            + '<div style="display:flex;gap:8px">'
-            + '<button class="ws-theme-btn ' + (!isLight ? 'ws-theme-btn-active' : '') + '" id="settingsDarkBtn"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg><span>Темная</span></button>'
-            + '<button class="ws-theme-btn ' + (isLight ? 'ws-theme-btn-active' : '') + '" id="settingsLightBtn"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg><span>Светлая</span></button>'
-            + '</div></div>'
-            + '<div style="margin-bottom:20px">'
-            + '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Раздел по умолчанию</div>'
-            + '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">Какой раздел открывать при запуске</div>'
-            + '<select id="defaultTabSelect" style="width:100%;padding:10px 14px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;font-family:inherit;outline:none;cursor:pointer">'
-            + '<option value="wallet">Анализ кошельков</option>'
-            + '<option value="trade">Терминал</option>'
-            + '<option value="alerts">Алерты</option>'
-            + '<option value="calls">Коллы</option>'
-            + '<option value="favorites">Трекер и избранное</option>'
-            + '<option value="my-trades">Мои сделки</option>'
-            + '<option value="whale">Киты</option>'
-            + '<option value="education">Обучение</option>'
-            + '<option value="profile">Профиль</option>'
-            + '</select></div>'
-            + '<div style="border-top:1px solid var(--border);padding-top:16px">'
-            + '<button class="logout-btn" id="settingsLogoutBtn" style="display:flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid rgba(248,81,73,0.3);border-radius:10px;background:rgba(248,81,73,0.08);color:#f85149;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;width:100%;justify-content:center">'
-            + '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11 7L9.6 8.4l2.6 2.6H2v2h10.2l-2.6 2.6L11 17l5-5-5-5zm9 12h-8v2h8c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-8v2h8v14z"/></svg>'
-            + 'Выйти из аккаунта</button></div></div>';
+        var isAuth = !!getFbAuthREST();
+        var navGroup = $('settingsGroupNav');
+        var acctGroup = $('settingsGroupAccount');
+        if (navGroup) navGroup.style.display = isAuth ? '' : 'none';
+        if (acctGroup) acctGroup.style.display = isAuth ? '' : 'none';
 
-        $('settingsDarkBtn').onclick = function() {
-            document.body.classList.remove('light-theme');
-            localStorage.setItem('polyTheme', 'dark');
-            $('settingsDarkBtn').classList.add('ws-theme-btn-active');
-            $('settingsLightBtn').classList.remove('ws-theme-btn-active');
-            reloadTVChart();
-        };
-        $('settingsLightBtn').onclick = function() {
-            document.body.classList.add('light-theme');
-            localStorage.setItem('polyTheme', 'light');
-            $('settingsLightBtn').classList.add('ws-theme-btn-active');
-            $('settingsDarkBtn').classList.remove('ws-theme-btn-active');
-            reloadTVChart();
-        };
-
-        var sel = $('defaultTabSelect');
-        if (sel) {
-            sel.value = defaultTab;
-            sel.onchange = function() {
-                defaultTab = sel.value;
-                localStorage.setItem('polyDefaultTab', defaultTab);
+        // Theme selector
+        var themeContainer = $('settingsThemeContainer');
+        if (themeContainer) {
+            var existingThemeCs = themeContainer.querySelector('.settings-cs-wrap');
+            if (existingThemeCs) existingThemeCs.remove();
+            var isCustomTheme = localStorage.getItem('polyCustomTheme') === 'true';
+            var curThemeVal = isCustomTheme ? 'custom' : (document.body.classList.contains('light-theme') ? 'light' : 'dark');
+            var themeList = [
+                { value: 'dark', label: settingsT('theme.dark'), icon: '<svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>' },
+                { value: 'light', label: settingsT('theme.light'), icon: '<svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41zm14.48 14.48a.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41zM6.05 18.36l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0zM17.95 5.64l1.06-1.06c.39-.39.39-1.03 0-1.41s-1.03-.39-1.41 0L16.54 5.2c-.39.39-.39 1.03 0 1.41.39.39 1.03.39 1.41 0z"/></svg>' },
+                { value: 'custom', label: settingsT('theme.custom'), icon: '<svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>' }
+            ];
+            function getThemeMatch(v) { return themeList.find(function(o) { return o.value === v; }) || themeList[0]; }
+            var themeWrap = document.createElement('div');
+            themeWrap.className = 'settings-cs-wrap';
+            var curMatch = getThemeMatch(curThemeVal);
+            var dropdownHtml = themeList.map(function(o) {
+                return '<div class="settings-cs-option' + (o.value === curThemeVal ? ' active' : '') + '" data-value="' + o.value + '">' +
+                    o.icon + '<span>' + escHtml(o.label) + '</span>' +
+                    (o.value === curThemeVal ? '<svg class="settings-cs-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' : '') +
+                '</div>';
+            }).join('');
+            themeWrap.innerHTML =
+                '<div class="settings-cs-trigger" tabindex="0">' +
+                    '<span class="settings-cs-selected">' + curMatch.icon + '<span class="settings-cs-label">' + escHtml(curMatch.label) + '</span></span>' +
+                    '<svg class="settings-cs-arrow" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>' +
+                '</div>' +
+                '<div class="settings-cs-dropdown">' + dropdownHtml + '</div>';
+            var themeTrigger = themeWrap.querySelector('.settings-cs-trigger');
+            var themeDropdown = themeWrap.querySelector('.settings-cs-dropdown');
+            function themeOpen() { themeDropdown.style.display = 'block'; themeTrigger.classList.add('open'); }
+            function themeClose() { themeDropdown.style.display = 'none'; themeTrigger.classList.remove('open'); }
+            themeTrigger.onclick = function(e) { e.stopPropagation(); if (themeDropdown.style.display === 'block') themeClose(); else themeOpen(); };
+            themeWrap.updateTheme = function(val) {
+                curThemeVal = val;
+                var m = getThemeMatch(val);
+                themeWrap.querySelector('.settings-cs-selected').innerHTML = m.icon + '<span class="settings-cs-label">' + escHtml(m.label) + '</span>';
+                themeDropdown.querySelectorAll('.settings-cs-option').forEach(function(el) {
+                    var isSel = el.dataset.value === val;
+                    el.classList.toggle('active', isSel);
+                    var ch = el.querySelector('.settings-cs-check');
+                    if (isSel && !ch) el.insertAdjacentHTML('beforeend', '<svg class="settings-cs-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>');
+                    else if (!isSel && ch) ch.remove();
+                });
             };
+            themeDropdown.querySelectorAll('.settings-cs-option').forEach(function(el) {
+                el.onclick = function(e) {
+                    e.stopPropagation();
+                    var val = this.dataset.value;
+                    themeClose();
+                    if (val === 'custom') {
+                        openCustomThemeModal();
+                    } else if (val !== curThemeVal) {
+                        localStorage.setItem('polyCustomTheme', 'false');
+                        var isLight = val === 'light';
+                        if (isLight !== document.body.classList.contains('light-theme')) {
+                            document.body.classList.toggle('light-theme');
+                            localStorage.setItem('polyTheme', isLight ? 'light' : 'dark');
+                            applyCustomTheme();
+                        }
+                        themeWrap.updateTheme(val);
+                    }
+                };
+            });
+            document.addEventListener('click', function handler(e) { if (!themeWrap.contains(e.target)) themeClose(); });
+            themeContainer.appendChild(themeWrap);
+            // Gear button for custom theme
+            var existingCtBtn = themeContainer.querySelector('.settings-ct-btn');
+            if (existingCtBtn) existingCtBtn.remove();
+            var ctBtn = document.createElement('button');
+            ctBtn.className = 'settings-ct-btn';
+            ctBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>';
+            ctBtn.title = settingsT('theme.custom');
+            ctBtn.onclick = function(e) { e.stopPropagation(); openCustomThemeModal(); };
+            themeContainer.appendChild(ctBtn);
         }
 
-        $('settingsLogoutBtn').onclick = function() { fbSignOutREST(); handleAuth(null); };
+        // Language selector
+        var langContainer = $('settingsLangContainer');
+        if (langContainer) {
+            langContainer.innerHTML = '';
+            var curLang = localStorage.getItem('polyLang') || 'ru';
+            var langs = [
+                { value: 'ru', label: 'RU', flag: '🇷🇺' },
+                { value: 'en', label: 'EN', flag: '🇬🇧' },
+                { value: 'zh', label: '中文', flag: '🇨🇳' }
+            ];
+            langs.forEach(function(l) {
+                var btn = document.createElement('button');
+                btn.className = 'settings-lang-btn' + (l.value === curLang ? ' active' : '');
+                btn.innerHTML = '<span class="settings-lang-flag">' + l.flag + '</span>' + l.label;
+                btn.onclick = function() {
+                    if (l.value === curLang) return;
+                    localStorage.setItem('polyLang', l.value);
+                    initSettingsTab();
+                };
+                langContainer.appendChild(btn);
+            });
+        }
+
+        // Default tab selector
+        var dtContainer = $('settingsDefaultTabContainer');
+        if (dtContainer) {
+            var existingDtBtn = dtContainer.querySelector('.settings-dt-btn');
+            if (existingDtBtn) existingDtBtn.remove();
+            var curTab = localStorage.getItem('polyDefaultTab') || 'wallet';
+            var tabOpts = [
+                { value: 'trade', label: settingsT('tab.terminal'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>' },
+                { value: 'alerts', label: settingsT('tab.alerts'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>' },
+                { value: 'calls', label: settingsT('tab.calls'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M5 8c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h2l4 4V6l-4 4H5zm12 4c0 1.5-.84 2.8-2.1 3.5l.6 1.1c1.6-.9 2.5-2.5 2.5-4.6s-.9-3.7-2.5-4.6l-.6 1.1c1.26.7 2.1 2 2.1 3.5z"/></svg>' },
+                { value: 'favorites', label: settingsT('tab.favorites'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>' },
+                { value: 'my-trades', label: settingsT('tab.myTrades'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>' },
+                { value: 'wallet', label: settingsT('tab.wallet'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>' },
+                { value: 'whale', label: settingsT('tab.whale'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>' },
+                { value: 'smart-alerts', label: settingsT('tab.smartAlerts'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>' },
+                { value: 'scanner', label: settingsT('tab.scanner'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' },
+                { value: 'x-sentiment', label: settingsT('tab.xSentiment'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M22 3.01L22 3.01l-8 8L22 20h-6l-5-6-6 6H1l8-8L1 3h6l5 6 6-6h4z"/></svg>' },
+                { value: 'weather', label: settingsT('tab.weather'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>' },
+                { value: 'news-hub', label: settingsT('tab.newsHub'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z"/></svg>' },
+                { value: 'new-market', label: settingsT('tab.newMarket'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>' },
+                { value: 'education', label: settingsT('tab.education'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z"/></svg>' },
+                { value: 'profile', label: settingsT('tab.profile'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>' },
+                { value: 'settings', label: settingsT('tab.settings'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>' }
+            ];
+            var tabGroups = [
+                { group: 'tab.trade', items: ['trade','alerts','calls','favorites','my-trades'] },
+                { group: 'tab.analysis', items: ['wallet','whale','smart-alerts','scanner','x-sentiment','weather','news-hub','new-market'] },
+                { group: 'divider', items: ['education','profile','settings'] }
+            ];
+            function renderTabGrid(curVal, isCheck) {
+                return tabGroups.map(function(g) {
+                    var h = '';
+                    if (g.group === 'divider') h += '<div class="dtm-group-divider"></div>';
+                    else if (g.group) h += '<div class="dtm-group-header">' + settingsT(g.group) + '</div>';
+                    h += g.items.map(function(v) {
+                        var o = tabOpts.find(function(x) { return x.value === v; });
+                        if (!o) return '';
+                        var active = isCheck ? (curVal.indexOf(v) === -1) : (v === curVal);
+                        return '<div class="dtm-option' + (active ? ' active' : '') + '" data-value="' + v + '">' +
+                            o.icon + '<span>' + o.label + '</span>' +
+                            (active ? '<svg class="dtm-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' : '') +
+                        '</div>';
+                    }).join('');
+                    return h;
+                }).join('');
+            }
+            function openTabModal() {
+                var overlay = document.createElement('div');
+                overlay.className = 'dtm-overlay';
+                var modal = document.createElement('div');
+                modal.className = 'dtm-modal';
+                modal.innerHTML =
+                    '<div class="dtm-header">' +
+                        '<span class="dtm-title">' + settingsT('defaultTab') + '</span>' +
+                        '<button class="dtm-close" id="dtmCloseBtn"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>' +
+                    '</div>' +
+                    '<div class="dtm-grid">' + renderTabGrid(curTab, false) + '</div>';
+                overlay.appendChild(modal);
+                document.body.appendChild(overlay);
+                function close() { overlay.remove(); }
+                overlay.onclick = function(e) { if (e.target === overlay) close(); };
+                modal.querySelector('#dtmCloseBtn').onclick = close;
+                modal.querySelectorAll('.dtm-option').forEach(function(el) {
+                    el.onclick = function() {
+                        var val = this.dataset.value;
+                        if (val !== curTab) {
+                            curTab = val;
+                            localStorage.setItem('polyDefaultTab', val);
+                            var match = tabOpts.find(function(o) { return o.value === val; });
+                            dtBtn.innerHTML = match ? match.icon + '<span>' + match.label + '</span>' : val;
+                            modal.querySelectorAll('.dtm-option').forEach(function(o) { o.classList.remove('active'); var ch = o.querySelector('.dtm-check'); if (ch) ch.remove(); });
+                            this.classList.add('active');
+                            this.insertAdjacentHTML('beforeend', '<svg class="dtm-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>');
+                        }
+                        setTimeout(close, 150);
+                    };
+                });
+            }
+            var dtBtn = document.createElement('button');
+            dtBtn.className = 'settings-dt-btn';
+            var curMatch = tabOpts.find(function(o) { return o.value === curTab; });
+            dtBtn.innerHTML = curMatch ? curMatch.icon + '<span>' + curMatch.label + '</span>' : 'Выбрать';
+            dtBtn.onclick = openTabModal;
+            dtContainer.appendChild(dtBtn);
+        }
+
+        // Menu visibility
+        var visContainer = $('settingsVisibilityContainer');
+        if (visContainer) {
+            var existingVisBtn = visContainer.querySelector('.settings-dt-btn');
+            if (existingVisBtn) existingVisBtn.remove();
+            var hiddenCount = JSON.parse(localStorage.getItem('polyHiddenMenuItems') || '[]').length;
+            var visBtn = document.createElement('button');
+            visBtn.className = 'settings-dt-btn';
+            visBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg><span>' + (hiddenCount > 0 ? settingsT('visibility.hiddenCount').replace('{n}', hiddenCount) : settingsT('visibility.allShown')) + '</span>';
+            visBtn.onclick = function() {
+                var hidden = JSON.parse(localStorage.getItem('polyHiddenMenuItems') || '[]');
+                var visTabOpts = [
+                    { value: 'trade', label: settingsT('tab.terminal'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>' },
+                    { value: 'alerts', label: settingsT('tab.alerts'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.75s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>' },
+                    { value: 'calls', label: settingsT('tab.calls'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M5 8c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h2l4 4V6l-4 4H5zm12 4c0 1.5-.84 2.8-2.1 3.5l.6 1.1c1.6-.9 2.5-2.5 2.5-4.6s-.9-3.7-2.5-4.6l-.6 1.1c1.26.7 2.1 2 2.1 3.5z"/></svg>' },
+                    { value: 'favorites', label: settingsT('tab.favorites'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>' },
+                    { value: 'my-trades', label: settingsT('tab.myTrades'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>' },
+                    { value: 'wallet', label: settingsT('tab.wallet'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>' },
+                    { value: 'whale', label: settingsT('tab.whale'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>' },
+                    { value: 'smart-alerts', label: settingsT('tab.smartAlerts'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>' },
+                    { value: 'scanner', label: settingsT('tab.scanner'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' },
+                    { value: 'x-sentiment', label: settingsT('tab.xSentiment'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M22 3.01L22 3.01l-8 8L22 20h-6l-5-6-6 6H1l8-8L1 3h6l5 6 6-6h4z"/></svg>' },
+                    { value: 'weather', label: settingsT('tab.weather'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>' },
+                    { value: 'news-hub', label: settingsT('tab.newsHub'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z"/></svg>' },
+                    { value: 'new-market', label: settingsT('tab.newMarket'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>' },
+                    { value: 'education', label: settingsT('tab.education'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z"/></svg>' },
+                    { value: 'profile', label: settingsT('tab.profile'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>' },
+                    { value: 'settings', label: settingsT('tab.settings'), icon: '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>' }
+                ];
+                var visTabGroups = [
+                    { group: 'tab.trade', items: ['trade','alerts','calls','favorites','my-trades'] },
+                    { group: 'tab.analysis', items: ['wallet','whale','smart-alerts','scanner','x-sentiment','weather','news-hub','new-market'] },
+                    { group: 'divider', items: ['education','profile','settings'] }
+                ];
+                function renderVisGrid(hiddenArr) {
+                    return visTabGroups.map(function(g) {
+                        var h = '';
+                        if (g.group === 'divider') h += '<div class="dtm-group-divider"></div>';
+                        else if (g.group) h += '<div class="dtm-group-header">' + settingsT(g.group) + '</div>';
+                        h += g.items.map(function(v) {
+                            var o = visTabOpts.find(function(x) { return x.value === v; });
+                            if (!o) return '';
+                            var isHidden = hiddenArr.indexOf(v) !== -1;
+                            return '<div class="dtm-option' + (isHidden ? '' : ' dtm-vis-visible') + '" data-value="' + v + '">' +
+                                o.icon + '<span>' + o.label + '</span>' +
+                                (!isHidden ? '<svg class="dtm-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' : '') +
+                            '</div>';
+                        }).join('');
+                        return h;
+                    }).join('');
+                }
+                var visOverlay = document.createElement('div');
+                visOverlay.className = 'dtm-overlay';
+                var visModal = document.createElement('div');
+                visModal.className = 'dtm-modal';
+                visModal.innerHTML =
+                    '<div class="dtm-header">' +
+                        '<span class="dtm-title">' + settingsT('visibility') + '</span>' +
+                        '<button class="dtm-close" id="visCloseBtn"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>' +
+                    '</div>' +
+                    '<div class="dtm-grid">' + renderVisGrid(hidden) + '</div>';
+                visOverlay.appendChild(visModal);
+                document.body.appendChild(visOverlay);
+                function closeVis() { visOverlay.remove(); }
+                visOverlay.onclick = function(e) { if (e.target === visOverlay) closeVis(); };
+                visModal.querySelector('#visCloseBtn').onclick = closeVis;
+                visModal.querySelectorAll('.dtm-option').forEach(function(el) {
+                    el.onclick = function() {
+                        var val = this.dataset.value;
+                        var h = JSON.parse(localStorage.getItem('polyHiddenMenuItems') || '[]');
+                        var currentlyHidden = h.indexOf(val) !== -1;
+                        if (currentlyHidden) {
+                            var idx = h.indexOf(val);
+                            if (idx !== -1) h.splice(idx, 1);
+                            this.classList.add('dtm-vis-visible');
+                            if (!this.querySelector('.dtm-check')) this.insertAdjacentHTML('beforeend', '<svg class="dtm-check" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>');
+                        } else {
+                            h.push(val);
+                            this.classList.remove('dtm-vis-visible');
+                            var ch = this.querySelector('.dtm-check');
+                            if (ch) ch.remove();
+                        }
+                        localStorage.setItem('polyHiddenMenuItems', JSON.stringify(h));
+                        applyMenuVisibility();
+                        var hc = h.length;
+                        visBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg><span>' + (hc > 0 ? settingsT('visibility.hiddenCount').replace('{n}', hc) : settingsT('visibility.allShown')) + '</span>';
+                    };
+                });
+            };
+            visContainer.appendChild(visBtn);
+        }
+
+        // Apply translations (static labels)
+        applySettingsTranslations();
+
+        // Account section
+        var logoutBtn = $('settingsLogoutBtn');
+        var emailLabel = $('settingsEmailLabel');
+        var auth = getFbAuthREST();
+        if (emailLabel) {
+            emailLabel.textContent = auth ? (auth.email || (auth.emailVerified ? settingsT('authorized') : settingsT('notAuthorized'))) : settingsT('notAuthorized');
+        }
+        if (logoutBtn) {
+            logoutBtn.style.display = auth ? 'inline-flex' : 'none';
+            logoutBtn.onclick = function() {
+                fbSignOutREST();
+                handleAuth(null);
+                initSettingsTab();
+            };
+        }
     }
 
     // ====================== MENU SETUP ======================
@@ -5115,6 +5730,947 @@
         } finally {
             if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = isSignUp ? 'Зарегистрироваться' : 'Войти'; }
         }
+    }
+
+    // ====================== PROFILE HELPERS ======================
+    function tariffIcon(feature) {
+        var f = feature.toLowerCase();
+        if (f.indexOf('аналитика') !== -1 && f.indexOf('кошельк') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>';
+        if (f.indexOf('запрос') !== -1 || f.indexOf('запросов') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>';
+        if (f.indexOf('отслеживаем') !== -1 || f.indexOf('кошельк') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>';
+        if (f.indexOf('избран') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
+        if (f.indexOf('комиссия') !== -1 || f.indexOf('%') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M15.73 3H8.27L3 8.27v7.46L8.27 21h7.46L21 15.73V8.27L15.73 3zM12 17.3c-2.93 0-5.3-2.37-5.3-5.3s2.37-5.3 5.3-5.3 5.3 2.37 5.3 5.3-2.37 5.3-5.3 5.3zm1-7.3l-3 3h2v3h2v-3h2l-3-3z"/></svg>';
+        if (f.indexOf('цена') !== -1 || f.indexOf('измен') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>';
+        if (f.indexOf('алерт') !== -1 || f.indexOf('автомат') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>';
+        if (f.indexOf('бэктест') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z"/></svg>';
+        if (f.indexOf('событ') !== -1 || f.indexOf('аналитика') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"/></svg>';
+        if (f.indexOf('рефераль') !== -1 || f.indexOf('реферальн') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M20 6h-2v2h-2V6h-2V4h2V2h2v2h2v2zm-10 2C8.9 8 8 8.9 8 10s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-2 6c-1.1 0-2 .9-2 2v1h8v-1c0-1.1-.9-2-2-2H8zm10-2c-1.1 0-2 .9-2 2v1h4v-1c0-1.1-.9-2-2-2zm-4-4c0 1.1.9 2 2 2s2-.9 2-2-.9-2-2-2-2 .9-2 2z"/></svg>';
+        if (f.indexOf('без лимит') !== -1 || f.indexOf('без огранич') !== -1) return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>';
+        return '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+    }
+
+    function updateReferralRank(plan, count) {
+        var isPro = plan === 'pro';
+        var ranks = isPro ? [
+            { min: 0, max: 0, name: '—', req: 'Нет рефералов', reward: '', nextName: 'Уровень 1', nextAt: 1, nextReward: '8% торговых комиссий, 8% с оплаты тарифа + 3% скидка' },
+            { min: 1, max: 5, name: 'Уровень 1', req: '1-5 активных рефералов', reward: '8% торговых комиссий, 8% с оплаты тарифа + 3% скидка', nextName: 'Уровень 2', nextAt: 6, nextReward: '15% торговых комиссий, 10% с оплаты тарифа + 6% скидка' },
+            { min: 6, max: 10, name: 'Уровень 2', req: '6-10 активных рефералов', reward: '15% торговых комиссий, 10% с оплаты тарифа + 6% скидка', nextName: 'Уровень 3', nextAt: 11, nextReward: '20% торговых комиссий, 20% с оплаты тарифа + 10% скидка' },
+            { min: 11, max: Infinity, name: 'Уровень 3', req: '11+ активных рефералов', reward: '20% торговых комиссий, 20% с оплаты тарифа + 10% скидка', nextName: null, nextAt: null, nextReward: '' }
+        ] : [
+            { min: 0, max: 0, name: '—', req: 'Нет рефералов', reward: '', nextName: 'Уровень 1', nextAt: 1, nextReward: '15% торговых комиссий, 15% с оплаты тарифа + 8% скидка' },
+            { min: 1, max: 5, name: 'Уровень 1', req: '1-5 активных рефералов', reward: '15% торговых комиссий, 15% с оплаты тарифа + 8% скидка', nextName: 'Уровень 2', nextAt: 6, nextReward: '25% торговых комиссий, 20% с оплаты тарифа + 12% скидка' },
+            { min: 6, max: 10, name: 'Уровень 2', req: '6-10 активных рефералов', reward: '25% торговых комиссий, 20% с оплаты тарифа + 12% скидка', nextName: 'Уровень 3', nextAt: 11, nextReward: '40% торговых комиссий, 40% с оплаты тарифа + 15% скидка' },
+            { min: 11, max: Infinity, name: 'Уровень 3', req: '11+ активных рефералов', reward: '40% торговых комиссий, 40% с оплаты тарифа + 15% скидка', nextName: null, nextAt: null, nextReward: '' }
+        ];
+        var currentRank = ranks[0];
+        var nextRank = null;
+        for (var i = 0; i < ranks.length; i++) {
+            if (count >= ranks[i].min && count <= ranks[i].max) {
+                currentRank = ranks[i];
+                nextRank = i + 1 < ranks.length ? ranks[i + 1] : null;
+                break;
+            }
+        }
+        var rankNameEl = $('profileRefCurrentRank');
+        if (rankNameEl) rankNameEl.textContent = currentRank.name;
+        var rankReqEl = $('profileRefRankReq');
+        if (rankReqEl) rankReqEl.textContent = currentRank.req;
+        var rankRewardEl = $('profileRefRankReward');
+        if (rankRewardEl) rankRewardEl.textContent = currentRank.reward || '—';
+        var barEl = $('profileRefRankBar');
+        var barTextEl = $('profileRefRankBarText');
+        var barNextEl = $('profileRefRankNext');
+        if (barEl && barTextEl) {
+            if (currentRank.nextAt !== null) {
+                var prevMin = currentRank.min;
+                var range = currentRank.nextAt - prevMin;
+                var progress = count - prevMin;
+                var pct = Math.min(100, Math.max(0, (progress / range) * 100));
+                barEl.style.width = pct + '%';
+                barTextEl.textContent = (count || 0) + ' / ' + currentRank.nextAt;
+            } else {
+                barEl.style.width = '100%';
+                barTextEl.textContent = count + ' (макс)';
+            }
+        }
+        if (barNextEl) {
+            if (nextRank && currentRank.nextAt !== null) {
+                barNextEl.innerHTML = '<span class="p-ref-rank-next-label">Следующий уровень:</span> <span class="p-ref-rank-next-val">' + nextRank.name + '</span> <span class="p-ref-rank-next-req">(' + nextRank.req + ')</span> — <span class="p-ref-rank-next-reward">' + currentRank.nextReward + '</span>';
+            } else {
+                barNextEl.innerHTML = '<span class="p-ref-rank-next-label">Достигнут максимальный уровень!</span> <span class="p-ref-rank-next-val">Все награды активны</span>';
+            }
+        }
+    }
+
+    function setProfileMsg(msg, isOk) {
+        var el = $('profileEditMsg');
+        if (!el) return;
+        el.textContent = msg;
+        el.className = 'p-msg' + (isOk ? ' success' : ' error');
+        if (msg) setTimeout(function() { el.textContent = ''; el.className = 'p-msg'; }, 5000);
+    }
+
+    function renderMyWallets() {
+        var list = $('myWalletList');
+        if (!list) return;
+        var wallets = getWallets();
+        var countEl = $('profileWalletCount');
+        if (countEl) countEl.textContent = wallets.length;
+        var html = '<div class="p-wallet-toolbar">'
+            + '<button class="p-wallet-toolbar-btn p-wallet-toolbar-create" id="profileCreateWalletBtn"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> Создать</button>'
+            + '<button class="p-wallet-toolbar-btn p-wallet-toolbar-import" id="profileImportWalletBtn"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg> Импортировать</button>'
+            + '</div>'
+            + '<div class="p-wallet-import-area" id="profileWalletImportArea" style="display:none">'
+            + '<div class="p-wallet-import-row"><input type="text" class="p-wallet-import-input" id="profileWalletImportKey" placeholder="Приватный ключ (0x...)" spellcheck="false"><button class="p-wallet-import-confirm" id="profileWalletImportConfirm">Импорт</button><button class="p-wallet-import-cancel" id="profileWalletImportCancel">Отмена</button></div>'
+            + '</div>';
+        if (!wallets.length) {
+            html += '<div class="p-wallet-empty">Нет кошельков</div>';
+            list.innerHTML = html;
+            _bindProfileWalletActions(list);
+            return;
+        }
+        for (var i = 0; i < wallets.length; i++) {
+            var w = wallets[i];
+            var addr = w.address || '';
+            var shortAddr = addr ? addr.substring(0, 6) + '...' + addr.substring(addr.length - 4) : '...';
+            var dateStr = w.createdAt ? new Date(w.createdAt).toLocaleDateString('ru-RU') : 'только что';
+            var name = (w.name || '').trim() ? w.name : shortAddr;
+            html += '<div class="p-wallet-item">'
+                + '<div class="p-wallet-icon"><svg viewBox="0 0 20 20" width="16" height="16" fill="none"><path d="M4 6a2 2 0 012-2h8a2 2 0 012 2v1H4V6z" fill="currentColor" opacity="0.3"/><rect x="2" y="7" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="12" r="1.5" fill="currentColor"/></svg></div>'
+                + '<div class="p-wallet-info">'
+                + '<span class="p-wallet-name" title="' + escHtml(addr) + '">' + escHtml(name) + '</span>'
+                + '<span class="p-wallet-addr">' + shortAddr + '</span>'
+                + '<span class="p-wallet-balance" id="pWalletBalance' + i + '" data-widx="' + i + '">—</span>'
+                + '<span class="p-wallet-network">Пополнение: Polygon · USDC (+ POL для газа)</span>'
+                + '</div>'
+                + '<div class="p-wallet-actions">'
+                + '<button class="p-wallet-action-btn" data-waction="deposit" data-widx="' + i + '" title="Пополнить"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>'
+                + '<button class="p-wallet-action-btn" data-waction="send" data-widx="' + i + '" title="Отправить"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>'
+                + '<button class="p-wallet-action-btn" data-waction="edit" data-widx="' + i + '" title="Редактировать"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>'
+                + '</div>'
+                + '</div>';
+        }
+        list.innerHTML = html;
+        _bindProfileWalletActions(list);
+        _updateProfileWalletBalances();
+    }
+
+    function _bindProfileWalletActions(list) {
+        var createBtn = $('profileCreateWalletBtn');
+        if (createBtn) createBtn.onclick = function() {
+            var btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="profile-btn-spinner"></span>';
+            loadEthersSite().then(function() {
+                var wallet = generateTradingWallet();
+                return deriveAddressSite(wallet.privateKey).then(function(addr) {
+                    wallet.address = addr;
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> Создать';
+                    showCreateWalletModal(wallet);
+                });
+            }).catch(function(err) {
+                setProfileMsg('Ошибка: ' + (err.message || 'Неизвестная ошибка'), false);
+                btn.disabled = false;
+                btn.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> Создать';
+            });
+        };
+
+        var importBtn = $('profileImportWalletBtn');
+        var importArea = $('profileWalletImportArea');
+        if (importBtn) importBtn.onclick = function() {
+            if (importArea) importArea.style.display = importArea.style.display === 'none' ? 'block' : 'none';
+            var input = $('profileWalletImportKey');
+            if (input && importArea && importArea.style.display !== 'none') input.focus();
+        };
+
+        var importCancelBtn = $('profileWalletImportCancel');
+        if (importCancelBtn) importCancelBtn.onclick = function() {
+            if (importArea) importArea.style.display = 'none';
+        };
+
+        var importConfirmBtn = $('profileWalletImportConfirm');
+        if (importConfirmBtn) importConfirmBtn.onclick = function() {
+            var input = $('profileWalletImportKey');
+            if (!input) return;
+            var key = input.value.trim();
+            if (!key) { setProfileMsg('Введите приватный ключ', false); return; }
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = '...';
+            loadEthersSite().then(function() {
+                var wallet = importWalletFromKeySite(key);
+                return deriveAddressSite(wallet.privateKey).then(function(addr) {
+                    wallet.address = addr;
+                    btn.disabled = false;
+                    btn.textContent = 'Импорт';
+                    if (importArea) importArea.style.display = 'none';
+                    input.value = '';
+                    showCreateWalletModal(wallet);
+                });
+            }).catch(function(err) {
+                setProfileMsg(err.message, false);
+                btn.disabled = false;
+                btn.textContent = 'Импорт';
+            });
+        };
+
+        list.querySelectorAll('[data-waction="edit"]').forEach(function(btn) {
+            btn.onclick = function() {
+                var idx = parseInt(this.dataset.widx);
+                showEditWalletModal(idx);
+            };
+        });
+        list.querySelectorAll('[data-waction="deposit"]').forEach(function(btn) {
+            btn.onclick = function() {
+                var idx = parseInt(this.dataset.widx);
+                var wallets = getWallets();
+                var w = wallets[idx];
+                if (w && w.address) showDepositModal(w.address);
+            };
+        });
+        list.querySelectorAll('[data-waction="send"]').forEach(function(btn) {
+            btn.onclick = function() {
+                var idx = parseInt(this.dataset.widx);
+                showSendModal(idx);
+            };
+        });
+    }
+
+    function _updateProfileWalletBalances() {
+        var wallets = getWallets();
+        if (!wallets.length) return;
+        wallets.forEach(function(w, i) {
+            var el = $('pWalletBalance' + i);
+            if (!el) return;
+            el.textContent = '...';
+            var addr = w.address;
+            if (!addr || addr === '...' || addr.length !== 42) { el.textContent = '—'; return; }
+            (function(idx, address, element) {
+                try {
+                    if (typeof ethers === 'undefined') { element.textContent = '—'; return; }
+                    var provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+                    provider.getBalance(address).then(function(balance) {
+                        var n = parseFloat(ethers.formatEther(balance));
+                        element.textContent = (n < 0.001 ? '<0.001' : n.toFixed(3)) + ' POL';
+                    }).catch(function() {
+                        element.textContent = '—';
+                    });
+                } catch (e) {
+                    element.textContent = '—';
+                }
+            })(i, addr, el);
+        });
+    }
+
+    function initProfileEdit() {
+        var msgEl = $('profileEditMsg');
+        if (!msgEl) return;
+        function setMsg(text, type) {
+            msgEl.textContent = text;
+            if (text) { msgEl.className = 'p-msg' + (type === 'error' ? ' error' : ''); } else { msgEl.className = 'p-msg'; }
+            if (text) setTimeout(function() { msgEl.textContent = ''; msgEl.className = 'p-msg'; }, 5000);
+        }
+
+        var loginInput = $('profileLoginInput');
+        var loginBtn = $('profileLoginSaveBtn');
+        function saveLogin() {
+            var val = (loginInput || $('profileLoginInput')).value.trim();
+            if (!val) { setMsg('Введите логин', 'error'); return; }
+            var auth = getFbAuthREST();
+            if (!auth) { setMsg('Требуется авторизация', 'error'); return; }
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<svg class="profile-btn-spin" viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M8 1a7 7 0 00-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
+            var newNickLower = val.toLowerCase();
+            fbGetREST('nicknames', newNickLower).then(function(existing) {
+                if (existing && existing.exists && existing.data && existing.data.userId !== auth.localId) {
+                    setMsg('Этот никнейм уже занят другим пользователем', 'error');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+                    return;
+                }
+                var auth2 = getFbAuthREST();
+                var userData = { displayName: val, nick: val };
+                var newCode = 'polywin-' + val;
+                var oldNick = null;
+                fbGetREST('users', auth.localId).then(function(userDoc) {
+                    if (userDoc && userDoc.exists && userDoc.data) {
+                        oldNick = userDoc.data.nick || userDoc.data.displayName || null;
+                    }
+                    if (oldNick && oldNick.toLowerCase() !== newNickLower) {
+                        fbSetREST('nicknames', oldNick.toLowerCase(), {}).catch(function(){});
+                    }
+                    fbSetREST('nicknames', newNickLower, { userId: auth.localId, nick: val, createdAt: Date.now() }).catch(function(e) {
+                        console.warn('[fb] nickname registry update error:', e);
+                    });
+                    fbSetREST('promocodes', newCode, {
+                        userId: auth.localId, nick: val, tariff: 'basic', createdAt: Date.now()
+                    }).catch(function(e) { console.warn('[fb] new promocode create:', e); });
+                    userData.promoCode = newCode;
+                    var promoInput = $('profilePromoCodeDisplay');
+                    if (promoInput) {
+                        promoInput.value = newCode;
+                        promoInput.dataset.loaded = '0';
+                    }
+                    return fbSetREST('users', auth.localId, userData).catch(function(){});
+                }).then(function() {
+                    setMsg('Логин сохранён', 'success');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+                    var hn = $('profileHeroName');
+                    if (hn) hn.textContent = val;
+                    var al = $('profileAvatarLetter');
+                    if (al) al.textContent = val[0].toUpperCase();
+                }).catch(function(e) {
+                    setMsg('Ошибка: ' + (e.message || 'Неизвестная ошибка'), 'error');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+                });
+            });
+        }
+        if (loginBtn) loginBtn.onclick = saveLogin;
+        if (loginInput) loginInput.onkeydown = function(e) { if (e.key === 'Enter') saveLogin(); };
+
+        var emailInput = $('profileNewEmail');
+        var emailBtn = $('profileEditEmailBtn');
+        function saveEmail() {
+            var newEmail = (emailInput || $('profileNewEmail')).value.trim();
+            if (!newEmail || newEmail.indexOf('@') === -1) { setMsg('Введите корректный email', 'error'); return; }
+            emailBtn.disabled = true;
+            emailBtn.innerHTML = '<svg class="profile-btn-spin" viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M8 1a7 7 0 00-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
+            try {
+                var auth = getFbAuthREST();
+                if (!auth) throw new Error('Требуется авторизация');
+                if (!auth.password) throw new Error('Пароль не сохранён. Выйдите и войдите заново.');
+                fbSetREST('users', auth.localId, { email: newEmail }).then(function() {
+                    setMsg('Email изменён на ' + newEmail, 'success');
+                    if ($('profileNewEmail')) $('profileNewEmail').value = '';
+                    updateProfileUI();
+                    emailBtn.disabled = false;
+                    emailBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+                }).catch(function(e) {
+                    setMsg('Ошибка: ' + (e.message || 'Неизвестная ошибка'), 'error');
+                    emailBtn.disabled = false;
+                    emailBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+                });
+            } catch (e) {
+                setMsg('Ошибка: ' + (e.message || 'Неизвестная ошибка'), 'error');
+                emailBtn.disabled = false;
+                emailBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+            }
+        }
+        if (emailBtn) emailBtn.onclick = saveEmail;
+        if (emailInput) emailInput.onkeydown = function(e) { if (e.key === 'Enter') saveEmail(); };
+
+        var passInput = $('profileNewPassword');
+        var passBtn = $('profileEditPassBtn');
+        function savePassword() {
+            var newPass = (passInput || $('profileNewPassword')).value;
+            if (!newPass || newPass.length < 6) { setMsg('Пароль должен быть минимум 6 символов', 'error'); return; }
+            passBtn.disabled = true;
+            passBtn.innerHTML = '<svg class="profile-btn-spin" viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M8 1a7 7 0 00-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
+            try {
+                var auth = getFbAuthREST();
+                if (!auth) throw new Error('Требуется авторизация');
+                if (auth.password) {
+                    fbSignInREST(auth.email, auth.password).then(function() {
+                        var newAuth = getFbAuthREST();
+                        if (newAuth) { newAuth.password = newPass; setFbAuthREST(newAuth); }
+                        setMsg('Пароль изменён', 'success');
+                        if ($('profileNewPassword')) $('profileNewPassword').value = '';
+                        passBtn.disabled = false;
+                        passBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+                    }).catch(function(e) {
+                        setMsg('Ошибка: ' + (e.message || 'Неизвестная ошибка'), 'error');
+                        passBtn.disabled = false;
+                        passBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+                    });
+                } else {
+                    throw new Error('Пароль не сохранён. Выйдите и войдите заново.');
+                }
+            } catch (e) {
+                setMsg('Ошибка: ' + (e.message || 'Неизвестная ошибка'), 'error');
+                passBtn.disabled = false;
+                passBtn.innerHTML = '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14.5A5.5 5.5 0 0011.5 9a7 7 0 10-6 10.5h10.5a4 4 0 001-7.5z"/><path d="M9.5 8.5v6"/><path d="M7 12l2.5 2.5L12 12"/></svg>';
+            }
+        }
+        if (passBtn) passBtn.onclick = savePassword;
+        if (passInput) passInput.onkeydown = function(e) { if (e.key === 'Enter') savePassword(); };
+    }
+
+    function initTelegramLink() {
+        var statusText = $('telegramStatusText');
+        var statusDot = $('telegramStatusDot');
+        var linkBtn = $('telegramLinkBtn');
+        var unlinkBtn = $('telegramUnlinkBtn');
+        var linkFlow = $('telegramLinkFlow');
+        var unlinkFlow = $('telegramUnlinkFlow');
+        var unlinkInput = $('telegramUnlinkInput');
+        var unlinkConfirmBtn = $('telegramUnlinkConfirmBtn');
+        var unlinkPoll = $('telegramUnlinkPoll');
+        var deepLink = $('telegramDeepLink');
+        var auth = getFbAuthREST();
+        if (!auth || !auth.localId) return;
+
+        function closeUnlink() {
+            if (window._unlinkPollTimer) { clearInterval(window._unlinkPollTimer); window._unlinkPollTimer = null; }
+            if (unlinkFlow) unlinkFlow.style.display = 'none';
+            if (unlinkPoll) unlinkPoll.textContent = '';
+            if (unlinkInput) unlinkInput.value = '';
+            if (unlinkBtn) unlinkBtn.style.display = '';
+        }
+        function closeLinkFlow() {
+            if (linkFlow) linkFlow.style.display = 'none';
+            if (linkBtn) linkBtn.style.display = '';
+            if (statusDot) statusDot.className = 'p-telegram-dot disconnected';
+        }
+        if (window._tgPollTimer) { clearInterval(window._tgPollTimer); window._tgPollTimer = null; }
+
+        function startUnlinkFlow() {
+            fbSetREST('users', auth.localId, { unlinkRequested: true }).catch(function(){});
+            if (unlinkBtn) unlinkBtn.style.display = 'none';
+            if (unlinkFlow) unlinkFlow.style.display = 'block';
+            if (unlinkInput) { unlinkInput.value = ''; unlinkInput.placeholder = 'Код из Telegram...'; }
+            if (unlinkPoll) unlinkPoll.textContent = 'Запрос отправлен в Telegram...';
+            var startTime = Date.now();
+            if (window._unlinkPollTimer) clearInterval(window._unlinkPollTimer);
+            window._unlinkPollTimer = setInterval(function() {
+                fbGetREST('users', auth.localId).then(function(doc) {
+                    if (doc && doc.data && doc.data.unlinkCode) {
+                        if (unlinkInput) unlinkInput.placeholder = 'Код из Telegram';
+                        if (unlinkPoll) unlinkPoll.textContent = 'Введи код из сообщения в Telegram';
+                        clearInterval(window._unlinkPollTimer);
+                        window._unlinkPollTimer = null;
+                    } else if (Date.now() - startTime > 300000) {
+                        clearInterval(window._unlinkPollTimer);
+                        window._unlinkPollTimer = null;
+                        closeUnlink();
+                    }
+                }).catch(function(){});
+            }, 3000);
+        }
+
+        function setStatus(connected, label) {
+            if (statusDot) { statusDot.className = 'p-telegram-dot ' + (connected ? 'connected' : 'disconnected'); }
+            if (statusText) { statusText.textContent = label; }
+            if (linkFlow) linkFlow.style.display = 'none';
+            closeUnlink();
+            if (linkBtn) linkBtn.style.display = connected ? 'none' : '';
+            if (unlinkBtn) unlinkBtn.style.display = connected ? '' : 'none';
+        }
+
+        function startLinkFlow() {
+            if (linkFlow) linkFlow.style.display = 'block';
+            if (linkBtn) linkBtn.style.display = 'none';
+            if (statusDot) statusDot.className = 'p-telegram-dot pending';
+            closeUnlink();
+
+            var code = '';
+            var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+
+            if (deepLink) {
+                deepLink.href = 'https://t.me/polywin_use_bot?start=link_' + code;
+            }
+
+            fbSetREST('users', auth.localId, { telegramLinkCode: code, linkCodeCreatedAt: Date.now() }).then(function() {
+                var startTime = Date.now();
+                window._tgPollTimer = setInterval(function() {
+                    fbGetREST('users', auth.localId).then(function(doc) {
+                        if (doc && doc.data && doc.data.telegramId) {
+                            clearInterval(window._tgPollTimer);
+                            window._tgPollTimer = null;
+                            if (linkFlow) linkFlow.style.display = 'none';
+                            var tgUsername = doc.data.telegramUsername || '';
+                            setStatus(true, 'Привязан' + (tgUsername ? ' (@' + tgUsername + ')' : ''));
+                            if (unlinkBtn) unlinkBtn.onclick = startUnlinkFlow;
+                        } else if (Date.now() - startTime > 300000) {
+                            clearInterval(window._tgPollTimer);
+                            window._tgPollTimer = null;
+                            closeLinkFlow();
+                        }
+                    }).catch(function() {});
+                }, 3000);
+            }).catch(function() {});
+        }
+
+        fbGetREST('users', auth.localId).then(function(doc) {
+            if (doc && doc.data && doc.data.telegramId) {
+                var tgUsername = doc.data.telegramUsername || '';
+                setStatus(true, 'Привязан' + (tgUsername ? ' (@' + tgUsername + ')' : ''));
+                if (unlinkBtn) unlinkBtn.onclick = startUnlinkFlow;
+            } else {
+                setStatus(false, 'Не привязан');
+                if (linkBtn) linkBtn.onclick = startLinkFlow;
+            }
+        }).catch(function() {
+            setStatus(false, 'Не привязан');
+            if (linkBtn) linkBtn.onclick = startLinkFlow;
+        });
+
+        if (unlinkConfirmBtn) {
+            unlinkConfirmBtn.onclick = function() {
+                var enteredCode = unlinkInput ? unlinkInput.value.trim().toUpperCase() : '';
+                if (!enteredCode || enteredCode.length < 4) {
+                    if (unlinkPoll) unlinkPoll.textContent = 'Введите код';
+                    return;
+                }
+                if (unlinkPoll) unlinkPoll.textContent = 'Отвязываем...';
+                fbGetREST('users', auth.localId).then(function(doc) {
+                    if (doc && doc.data && doc.data.unlinkCode === enteredCode) {
+                        fbSetREST('users', auth.localId, { unlinkVerified: true }).then(function() {
+                            if (unlinkPoll) unlinkPoll.textContent = 'Ожидаем подтверждения...';
+                            startUnlinkDonePoll();
+                        }).catch(function() {
+                            if (unlinkPoll) unlinkPoll.textContent = 'Ошибка';
+                        });
+                    } else {
+                        if (unlinkPoll) unlinkPoll.textContent = 'Неверный код';
+                        setTimeout(function() { if (unlinkPoll) unlinkPoll.textContent = ''; }, 3000);
+                    }
+                }).catch(function() {
+                    if (unlinkPoll) unlinkPoll.textContent = 'Ошибка';
+                });
+            };
+        }
+
+        function startUnlinkDonePoll() {
+            if (window._unlinkDoneTimer) clearInterval(window._unlinkDoneTimer);
+            window._unlinkDoneTimer = setInterval(function() {
+                fbGetREST('users', auth.localId).then(function(doc) {
+                    if (!doc || !doc.data || !doc.data.telegramId) {
+                        clearInterval(window._unlinkDoneTimer);
+                        window._unlinkDoneTimer = null;
+                        setStatus(false, 'Не привязан');
+                        if (linkBtn) linkBtn.onclick = startLinkFlow;
+                    }
+                }).catch(function() {});
+            }, 2000);
+        }
+    }
+
+    // ====================== WALLET MODALS ======================
+    var _pendingWallet = null;
+
+    function showCreateWalletModal(wallet) {
+        _pendingWallet = wallet;
+        $('walletModalTitle').textContent = 'Новый кошелёк';
+        $('walletModalAddress').textContent = wallet.address;
+        $('walletModalKey').value = wallet.privateKey;
+        $('walletModalKey').type = 'password';
+        $('walletModalName').value = '';
+        $('walletModalComment').value = '';
+        $('walletModalMode').value = 'create';
+        $('walletModalIndex').value = '';
+        $('walletModalOverlay').style.display = 'flex';
+        $('walletModalName').focus();
+    }
+
+    function showEditWalletModal(index) {
+        var wallets = getWallets();
+        var w = wallets[index];
+        if (!w) return;
+        _pendingWallet = null;
+        $('walletModalTitle').textContent = w.name || 'Кошелёк';
+        $('walletModalAddress').textContent = w.address;
+        $('walletModalKey').value = w.privateKey;
+        $('walletModalKey').type = 'password';
+        $('walletModalName').value = w.name || '';
+        $('walletModalComment').value = w.comment || '';
+        $('walletModalMode').value = 'edit';
+        $('walletModalIndex').value = index;
+        var delBtn = $('walletModalDelete');
+        if (delBtn) {
+            delBtn.style.display = '';
+            delBtn.onclick = function() {
+                if (!confirm('Удалить кошелёк «' + (w.name || w.address.substring(0, 8) + '...') + '»?')) return;
+                deleteWallet(index);
+                renderMyWallets();
+                hideWalletModal();
+                setProfileMsg('Кошелёк удалён', false);
+            };
+        }
+        $('walletModalOverlay').style.display = 'flex';
+    }
+
+    function hideWalletModal() {
+        $('walletModalOverlay').style.display = 'none';
+        _pendingWallet = null;
+    }
+
+    function saveWalletFromModal() {
+        var name = $('walletModalName').value.trim();
+        var comment = $('walletModalComment').value.trim();
+        var mode = $('walletModalMode').value;
+        var index = parseInt($('walletModalIndex').value);
+
+        if (mode === 'create' && _pendingWallet) {
+            _pendingWallet.name = name || '';
+            _pendingWallet.comment = comment || '';
+            saveWallet(_pendingWallet);
+            renderMyWallets();
+            hideWalletModal();
+            setProfileMsg('Кошелёк создан', true);
+        } else if (mode === 'edit' && !isNaN(index)) {
+            var wallets = getWallets();
+            var w = wallets[index];
+            if (w) {
+                w.name = name || '';
+                w.comment = comment || '';
+                saveWallets(wallets);
+                renderMyWallets();
+                hideWalletModal();
+                setProfileMsg('Кошелёк обновлён', true);
+            }
+        }
+    }
+
+    function exportWalletKey(wallet) {
+        var input = document.createElement('textarea');
+        input.value = wallet.privateKey;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        setProfileMsg('Приватный ключ скопирован', true);
+    }
+
+    // ====================== WALLET MODAL BINDINGS ======================
+    $('walletModalClose').onclick = hideWalletModal;
+    $('walletModalCancel').onclick = hideWalletModal;
+    $('walletModalOverlay').onclick = function(e) { if (e.target === e.currentTarget) hideWalletModal(); };
+    $('walletModalSave').onclick = saveWalletFromModal;
+    $('walletModalKeyToggle').onclick = function() {
+        var input = $('walletModalKey');
+        if (input.type === 'password') {
+            input.type = 'text';
+            this.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>';
+        } else {
+            input.type = 'password';
+            this.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>';
+        }
+    };
+    $('walletModalKeyCopy').onclick = function() {
+        var input = $('walletModalKey');
+        var val = input.value;
+        var ta = document.createElement('textarea');
+        ta.value = val;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setProfileMsg('Приватный ключ скопирован', true);
+    };
+    $('walletModalAddrCopy').onclick = function() {
+        var addr = $('walletModalAddress').textContent;
+        var ta = document.createElement('textarea');
+        ta.value = addr;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setProfileMsg('Адрес скопирован', true);
+    };
+
+    // ====================== DEPOSIT / SEND MODALS ======================
+    function showDepositModal(addr) {
+        var overlay = document.createElement('div');
+        overlay.className = 'p-wallet-modal-overlay';
+        var shortAddr = addr.substring(0, 6) + '...' + addr.substring(addr.length - 4);
+        var html = '<div class="p-wallet-modal p-wallet-modal-deposit">'
+            + '<div class="p-wallet-modal-header">'
+            + '<span class="p-wallet-modal-title"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg> Пополнение кошелька</span>'
+            + '<button class="p-wallet-modal-close"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>'
+            + '</div>'
+            + '<div class="p-wallet-modal-body p-wallet-modal-body-deposit">'
+            + '<div class="p-wallet-deposit-qr" id="depositQR"></div>'
+            + '<div class="p-wallet-deposit-label">Отправьте USDC или POL на этот адрес:</div>'
+            + '<div class="p-wallet-deposit-addr-wrap">'
+            + '<div class="p-wallet-deposit-addr" id="depositAddr">' + addr + '</div>'
+            + '<button class="p-wallet-deposit-copy" id="depositCopyAddr"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Копировать</button>'
+            + '</div>'
+            + '<div class="p-wallet-deposit-note" style="flex-direction:column;align-items:flex-start;gap:6px"><div style="display:flex;align-items:center;gap:5px;font-weight:700;color:#f0883e"><svg viewBox="0 0 24 24" width="14" height="14" style="flex-shrink:0"><path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg> ⚠ Важно: только сеть Polygon!</div>'
+            + '<div style="display:flex;align-items:center;gap:5px"><svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0;color:#4C7F6E"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg> Принимаются: <strong>USDC</strong> и <strong>POL</strong> в сети <strong>Polygon</strong></div>'
+            + '<div style="display:flex;align-items:center;gap:5px;color:#f85149"><svg viewBox="0 0 24 24" width="12" height="12" style="flex-shrink:0"><path fill="currentColor" d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg> Не отправляйте через Ethereum (ERC-20) — средства уйдут на тот же адрес, но в другой сети, и вы их не увидите здесь!</div>'
+            + '<div style="display:flex;align-items:center;gap:5px;font-size:9px;color:#8b949e"><svg viewBox="0 0 24 24" width="11" height="11" style="flex-shrink:0"><path fill="currentColor" d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg> Если ошиблись сетью — импортируйте ключ в MetaMask и используйте бридж (Polygon Bridge, Orbiter) для возврата</div>'
+            + '</div>'
+            + '</div>'
+            + '</div>';
+        overlay.innerHTML = html;
+        document.body.appendChild(overlay);
+        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+        overlay.querySelector('.p-wallet-modal-close').onclick = function() { overlay.remove(); };
+        var qrEl = overlay.querySelector('#depositQR');
+        if (qrEl) {
+            var img = document.createElement('img');
+            img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(addr);
+            img.style.width = '180px';
+            img.style.height = '180px';
+            img.style.borderRadius = '12px';
+            img.style.background = '#ffffff';
+            img.style.padding = '8px';
+            img.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+            qrEl.appendChild(img);
+        }
+        overlay.querySelector('#depositCopyAddr').onclick = function() {
+            var ta = document.createElement('textarea');
+            ta.value = addr;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            this.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Скопировано!';
+            this.style.borderColor = '#3fb950';
+            this.style.color = '#3fb950';
+            var self = this;
+            setTimeout(function() {
+                self.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Копировать';
+                self.style.borderColor = '';
+                self.style.color = '';
+            }, 2000);
+        };
+    }
+
+    function showSendModal(idx) {
+        var wallets = getWallets();
+        var w = wallets[idx];
+        if (!w) return;
+        var overlay = document.createElement('div');
+        overlay.className = 'p-wallet-modal-overlay';
+        var html = '<div class="p-wallet-modal p-wallet-modal-send">'
+            + '<div class="p-wallet-modal-header">'
+            + '<span class="p-wallet-modal-title"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg> Отправить средства</span>'
+            + '<button class="p-wallet-modal-close"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>'
+            + '</div>'
+            + '<div class="p-wallet-modal-body">'
+            + '<div class="p-wallet-send-row">'
+            + '<div class="p-wallet-send-field p-wallet-send-field-half">'
+            + '<label class="p-wallet-send-label">Откуда</label>'
+            + '<div class="p-wallet-send-sel-wrap"><svg viewBox="0 0 24 24" width="12" height="12" class="p-wallet-send-sel-icon"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg><select class="p-wallet-send-sel" id="sendWalletSel">';
+        wallets.forEach(function(wl, i) {
+            var nm = (wl.name || '').trim() || (wl.address || '').substring(0, 8) + '...';
+            html += '<option value="' + i + '"' + (i === idx ? ' selected' : '') + '>' + escHtml(nm) + '</option>';
+        });
+        html += '</select></div>'
+            + '</div>'
+            + '<div class="p-wallet-send-field p-wallet-send-field-half">'
+            + '<label class="p-wallet-send-label">Валюта</label>'
+            + '<div class="p-wallet-send-token-group" id="sendTokenGroup">'
+            + '<button class="p-wallet-send-token-btn" data-token="POL">POL</button>'
+            + '<button class="p-wallet-send-token-btn active" data-token="USDC">USDC</button>'
+            + '</div>'
+            + '</div>'
+            + '</div>'
+            + '<div class="p-wallet-send-field">'
+            + '<label class="p-wallet-send-label">Адрес получателя</label>'
+            + '<div class="p-wallet-send-input-wrap"><svg viewBox="0 0 24 24" width="12" height="12" class="p-wallet-send-input-icon"><path fill="currentColor" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg><input type="text" class="p-wallet-send-input" id="sendToAddr" placeholder="0x..." spellcheck="false"></div>'
+            + '</div>'
+            + '<div class="p-wallet-send-row">'
+            + '<div class="p-wallet-send-field" style="flex:1">'
+            + '<label class="p-wallet-send-label">Сумма</label>'
+            + '<input type="number" class="p-wallet-send-input" id="sendAmount" placeholder="0.00" min="0" step="any" style="flex:1">'
+            + '</div>'
+            + '<div class="p-wallet-send-field" style="flex:0 0 60px;display:flex;align-items:flex-end;padding-bottom:2px">'
+            + '<button class="p-wallet-send-max-btn" id="sendMaxBtn">MAX</button>'
+            + '</div>'
+            + '</div>'
+            + '<div class="p-wallet-send-status" id="sendStatus"></div>'
+            + '<button class="p-wallet-send-submit" id="sendTxBtn"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg> Отправить</button>'
+            + '</div>'
+            + '</div>';
+        overlay.innerHTML = html;
+        document.body.appendChild(overlay);
+        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+        overlay.querySelector('.p-wallet-modal-close').onclick = function() { overlay.remove(); };
+
+        overlay.querySelectorAll('#sendTokenGroup .p-wallet-send-token-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                overlay.querySelectorAll('#sendTokenGroup .p-wallet-send-token-btn').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+            };
+        });
+
+        overlay.querySelector('#sendMaxBtn').onclick = function() {
+            var sidx = parseInt(document.getElementById('sendWalletSel').value);
+            var token = overlay.querySelector('#sendTokenGroup .p-wallet-send-token-btn.active').dataset.token;
+            var ws = getWallets();
+            var ww = ws[sidx];
+            if (!ww || !ww.address) return;
+            var amountEl = document.getElementById('sendAmount');
+            if (token === 'POL') {
+                var balEl = document.getElementById('pWalletBalance' + sidx);
+                if (balEl) {
+                    var txt = balEl.textContent.replace(' POL', '');
+                    var n = parseFloat(txt);
+                    if (!isNaN(n) && n > 0.001) amountEl.value = (n - 0.001).toFixed(4);
+                    else amountEl.value = '';
+                }
+            } else {
+                var usdcEl = document.getElementById('pWalletUSDC' + sidx);
+                if (usdcEl) {
+                    var txt = usdcEl.textContent.replace(' USDC', '');
+                    var n = parseFloat(txt);
+                    if (!isNaN(n)) amountEl.value = n.toFixed(2);
+                }
+            }
+        };
+
+        overlay.querySelector('#sendTxBtn').onclick = function() {
+            var btn = this;
+            var sidx = parseInt(document.getElementById('sendWalletSel').value);
+            var token = overlay.querySelector('#sendTokenGroup .p-wallet-send-token-btn.active').dataset.token;
+            var to = document.getElementById('sendToAddr').value.trim();
+            var amount = document.getElementById('sendAmount').value.trim();
+            var statusEl = document.getElementById('sendStatus');
+            if (!to || !amount) { statusEl.textContent = 'Заполните все поля'; statusEl.style.color = '#f85149'; return; }
+            if (!to.match(/^0x[0-9a-fA-F]{40}$/)) { statusEl.textContent = 'Неверный адрес получателя'; statusEl.style.color = '#f85149'; return; }
+            var swallets = getWallets();
+            var sw = swallets[sidx];
+            if (!sw || !sw.privateKey) { statusEl.textContent = 'Ошибка: нет ключа'; statusEl.style.color = '#f85149'; return; }
+            btn.disabled = true;
+            btn.innerHTML = '<span class="p-wallet-send-spinner"></span> Отправка...';
+            statusEl.innerHTML = '<span class="p-wallet-send-status-pending"></span> Подпись и отправка...';
+            statusEl.style.color = '#8b949e';
+            loadEthersSite().then(function() {
+                try {
+                    var provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+                    var wallet = new ethers.Wallet(sw.privateKey, provider);
+                    var txPromise;
+                    if (token === 'POL') {
+                        txPromise = wallet.sendTransaction({
+                            to: to,
+                            value: ethers.parseEther(amount)
+                        });
+                    } else {
+                        var usdcAddr = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+                        var erc20 = new ethers.Contract(usdcAddr, [
+                            'function transfer(address to, uint256 amount) returns (bool)',
+                            'function decimals() view returns (uint8)'
+                        ], wallet);
+                        txPromise = erc20.decimals().then(function(dec) {
+                            var parsed = ethers.parseUnits(amount, dec);
+                            return erc20.transfer(to, parsed);
+                        });
+                    }
+                    return txPromise.then(function(tx) {
+                        statusEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" style="color:#e3b341;vertical-align:-2px;margin-right:4px"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg> Транзакция отправлена! <a href="https://polygonscan.com/tx/' + tx.hash + '" target="_blank" style="color:#58a6ff;font-weight:600">PolygonScan ↗</a>';
+                        statusEl.style.color = '#3fb950';
+                        btn.disabled = false;
+                        btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg> Отправить';
+                        return tx.wait();
+                    }).then(function(receipt) {
+                        statusEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" style="color:#3fb950;vertical-align:-2px;margin-right:4px"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Подтверждено! <a href="https://polygonscan.com/tx/' + receipt.hash + '" target="_blank" style="color:#58a6ff;font-weight:600">PolygonScan ↗</a>';
+                    });
+                } catch (e) {
+                    statusEl.innerHTML = 'Ошибка: ' + (e.message || 'Неизвестная ошибка');
+                    statusEl.style.color = '#f85149';
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg> Отправить';
+                }
+            }).catch(function(e) {
+                statusEl.innerHTML = 'Ошибка: ' + (e.message || 'Неизвестная ошибка');
+                statusEl.style.color = '#f85149';
+                btn.disabled = false;
+                btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg> Отправить';
+            });
+        };
+    }
+
+    // ====================== WALLET DATA MANAGEMENT ======================
+    function generateTradingWallet() {
+        const keyBytes = new Uint8Array(32);
+        crypto.getRandomValues(keyBytes);
+        const privateKey = '0x' + Array.from(keyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        return { privateKey: privateKey, createdAt: Date.now() };
+    }
+
+    function deriveAddressSite(privateKey) {
+        try {
+            if (typeof ethers === 'undefined') return Promise.reject(new Error('ethers not loaded'));
+            var wallet = new ethers.Wallet(privateKey);
+            return Promise.resolve(wallet.address);
+        } catch (e) {
+            return Promise.reject(e);
+        }
+    }
+
+    function importWalletFromKeySite(key) {
+        key = key.trim();
+        if (!key.match(/^0x[0-9a-fA-F]{64}$/)) throw new Error('Неверный формат ключа. Ожидается 0x + 64 hex символа.');
+        function sha16(msg) {
+            var h = 0;
+            for (var i = 0; i < msg.length; i++) { h = ((h << 5) - h) + msg.charCodeAt(i); h |= 0; }
+            return Math.abs(h).toString(16).padStart(8, '0');
+        }
+        var h = sha16(key);
+        return { address: '0x' + sha16(h + '1') + sha16(h + '2') + sha16(h + '3') + sha16(h + '4') + sha16(h + '5'), privateKey: key, createdAt: Date.now() };
+    }
+
+    function getWallets() {
+        try {
+            var stored = JSON.parse(localStorage.getItem('polyTradingWallets') || '[]');
+            if (!Array.isArray(stored)) {
+                var old = localStorage.getItem('polyTradingWallet');
+                stored = old ? [JSON.parse(old)] : [];
+                localStorage.setItem('polyTradingWallets', JSON.stringify(stored));
+            }
+            return stored;
+        } catch { return []; }
+    }
+
+    function saveWallets(wallets) {
+        localStorage.setItem('polyTradingWallets', JSON.stringify(wallets));
+        var auth = getFbAuthREST();
+        if (auth) {
+            wallets.forEach(function(w) {
+                fbSetREST('wallets', auth.localId + '_' + w.address, { userId: auth.localId, name: w.name || '', address: w.address || '', privateKey: w.privateKey || '', createdAt: w.createdAt || Date.now() }).catch(function(e){});
+            });
+        }
+    }
+
+    function saveWallet(wallet) {
+        var wallets = getWallets();
+        wallets.push(wallet);
+        saveWallets(wallets);
+        return wallets;
+    }
+
+    function deleteWallet(index) {
+        var wallets = getWallets();
+        wallets.splice(index, 1);
+        saveWallets(wallets);
+    }
+
+    var _ethersLoaded = false;
+    var _ethersLoading = null;
+
+    function loadEthersSite() {
+        if (_ethersLoaded) return Promise.resolve();
+        if (_ethersLoading) return _ethersLoading;
+        var p = new Promise(function(resolve, reject) {
+            if (typeof window.ethers !== 'undefined' && window.ethers && window.ethers.providers) {
+                _ethersLoaded = true;
+                resolve();
+                return;
+            }
+            var s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.5/ethers.umd.min.js';
+            var timedOut = false;
+            var tid = setTimeout(function() { timedOut = true; reject(new Error('Загрузка ethers.js превысила 10с')); }, 10000);
+            s.onload = function() { if (!timedOut) { clearTimeout(tid); _ethersLoaded = true; resolve(); } };
+            s.onerror = function() { if (!timedOut) { clearTimeout(tid); reject(new Error('Не удалось загрузить ethers.js')); } };
+            (document.head || document.documentElement).appendChild(s);
+        });
+        _ethersLoading = p.then(function(v) { _ethersLoading = null; return v; }, function(e) { _ethersLoading = null; throw e; });
+        return _ethersLoading;
     }
 
     // ====================== INIT ======================

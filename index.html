@@ -6,6 +6,7 @@
     <title>PolyWin — Trading Terminal</title>
     <link rel="icon" href="assets/polywin_20.png" type="image/png">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.5/ethers.umd.min.js"></script>
 
 </head>
 <body>
@@ -389,8 +390,269 @@
                 <div class="nav-tab-content" id="news-hub-tab"><div id="news-hub-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Хаб новостей</p></div></div>
                 <div class="nav-tab-content" id="new-market-tab"><div id="new-market-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Новые рынки</p></div></div>
                 <div class="nav-tab-content" id="education-tab"><div id="education-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Обучающая платформа</p></div></div>
-                <div class="nav-tab-content" id="profile-tab"><div id="profile-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Профиль</p></div></div>
-                <div class="nav-tab-content" id="settings-tab"><div id="settings-content" style="padding:12px"><p style="color:var(--text-secondary);text-align:center">Настройки</p></div></div>
+                <div class="nav-tab-content" id="profile-tab">
+                    <div class="profile-section" id="profile-content">
+                        <!-- LOGGED IN -->
+                        <div id="profileLoggedIn" style="display:none">
+                            <!-- Hero -->
+                            <div class="p-hero" id="profileHeroCard">
+                                <div class="p-hero-bg"></div>
+                                <div class="p-hero-glow"></div>
+                                <div class="p-hero-particles" id="heroParticles"></div>
+                                <div class="p-hero-body">
+                                    <div class="p-hero-avatar" id="profileAvatar">
+                                        <span id="profileAvatarLetter">?</span>
+                                    </div>
+                                    <div class="p-hero-info">
+                                        <div class="p-hero-name" id="profileHeroName">Загрузка...</div>
+                                        <div class="p-hero-email" id="profileHeroEmail"></div>
+                                        <div class="p-hero-meta">
+                                            <span class="p-hero-plan" id="profileHeroPlan">
+                                                <svg viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M8 1l2 4 4 .5-3 3 1 4.5-4-2-4 2 1-4.5-3-3L6 5l2-4z"/></svg>
+                                                <span id="profileTariffBadge2">Free</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button class="p-hero-logout" id="profileHeroLogout" title="Выйти">
+                                        <svg viewBox="0 0 20 20" width="16" height="16"><path d="M13 14l4-4-4-4M17 10H7M10 17H5a2 2 0 01-2-2V5a2 2 0 012-2h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Stats Row -->
+                            <div class="p-stats-row" id="profileStatsRow">
+                                <div class="p-stat">
+                                    <div class="p-stat-icon"><svg viewBox="0 0 22 22" width="16" height="16" fill="none"><rect x="3" y="12" width="4" height="7" rx="1" fill="currentColor" opacity="0.5"/><rect x="9" y="8" width="4" height="11" rx="1" fill="currentColor" opacity="0.7"/><rect x="15" y="3" width="4" height="16" rx="1" fill="currentColor"/></svg></div>
+                                    <div class="p-stat-info">
+                                        <span class="p-stat-val" id="profileStatTrades">0</span>
+                                        <span class="p-stat-label">Сделок</span>
+                                    </div>
+                                </div>
+                                <div class="p-stat">
+                                    <div class="p-stat-icon"><svg viewBox="0 0 22 22" width="16" height="16" fill="none"><path d="M2 16l6-8 4 3 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 16v-4h4v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 20h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+                                    <div class="p-stat-info">
+                                        <span class="p-stat-val" id="profileStatWR">0%</span>
+                                        <span class="p-stat-label">Win Rate</span>
+                                    </div>
+                                </div>
+                                <div class="p-stat">
+                                    <div class="p-stat-icon"><svg viewBox="0 0 22 22" width="16" height="16" fill="none"><path d="M11 2v18M6 8l5-4 5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="11" y="17" text-anchor="middle" font-size="11" font-weight="800" fill="currentColor">$</text></svg></div>
+                                    <div class="p-stat-info">
+                                        <span class="p-stat-val" id="profileStatPNL">$0</span>
+                                        <span class="p-stat-label">PNL</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Account Settings -->
+                            <div class="p-card">
+                                <div class="p-card-header">
+                                    <svg viewBox="0 0 20 20" width="16" height="16"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.93 4.93l1.41 1.41M13.66 13.66l1.41 1.41M4.93 15.07l1.41-1.41M13.66 6.34l1.41-1.41" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>
+                                    <span>Настройки аккаунта</span>
+                                </div>
+                                <div class="p-card-body">
+                                    <div class="p-field">
+                                        <label class="p-field-label">Никнейм</label>
+                                        <div class="p-field-row">
+                                            <input type="text" id="profileLoginInput" placeholder="Логин" class="p-input" autocomplete="off">
+                                            <button class="p-btn p-btn-primary" id="profileLoginSaveBtn"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M13.5 4.5L6 12l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+                                        </div>
+                                    </div>
+                                    <div class="p-field">
+                                        <label class="p-field-label">Email</label>
+                                        <div class="p-field-row">
+                                            <input type="email" id="profileNewEmail" placeholder="Новый email" class="p-input">
+                                            <button class="p-btn p-btn-primary" id="profileEditEmailBtn"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M13.5 4.5L6 12l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+                                        </div>
+                                    </div>
+                                    <div class="p-field">
+                                        <label class="p-field-label">Пароль</label>
+                                        <div class="p-field-row">
+                                            <input type="password" id="profileNewPassword" placeholder="Новый пароль" class="p-input">
+                                            <button class="p-btn p-btn-primary" id="profileEditPassBtn"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M13.5 4.5L6 12l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+                                        </div>
+                                    </div>
+                                    <div class="p-field" id="telegramField">
+                                        <label class="p-field-label">Telegram</label>
+                                        <div class="p-field-row" id="telegramStatusRow">
+                                            <span class="p-telegram-dot" id="telegramStatusDot"></span>
+                                            <span class="p-telegram-label" id="telegramStatusText">Проверка...</span>
+                                            <button class="p-btn p-btn-primary" id="telegramLinkBtn" style="display:none" title="Привязать Telegram"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M14.5 2.7a.5.5 0 0 0-.5-.1L1.5 7.6a.7.7 0 0 0 0 1.3l4 1.5 5.5-4.3-3.5 4.7 4 3a.5.5 0 0 0 .8-.4L14.8 3.2a.5.5 0 0 0-.3-.5z" fill="currentColor"/></svg></button>
+                                            <button class="p-btn p-btn-primary" id="telegramUnlinkBtn" style="display:none;background:rgba(248,81,73,0.12);border-color:rgba(248,81,73,0.2);color:#f85149;" title="Отвязать Telegram"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M2 8h12M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg></button>
+                                        </div>
+                                        <div id="telegramUnlinkFlow" style="display:none">
+                                            <div class="p-telegram-code-wrap" style="border-color:rgba(248,81,73,0.2);">
+                                                <div class="p-telegram-code-row">
+                                                    <input type="text" id="telegramUnlinkInput" class="p-input" placeholder="Код для отвязки" maxlength="6" style="text-align:center;font-weight:700;letter-spacing:3px;text-transform:uppercase;font-size:14px;flex:1;">
+                                                    <button class="p-btn p-btn-primary" id="telegramUnlinkConfirmBtn" style="background:rgba(248,81,73,0.12);border-color:rgba(248,81,73,0.2);color:#f85149;" title="Подтвердить"><svg viewBox="0 0 16 16" width="13" height="13"><path d="M13.5 4.5L6 12l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+                                                </div>
+                                                <div class="p-telegram-poll" id="telegramUnlinkPoll"></div>
+                                            </div>
+                                        </div>
+                                        <div id="telegramLinkFlow" style="display:none">
+                                            <div class="p-telegram-code-wrap">
+                                                <a href="#" id="telegramDeepLink" target="_blank" rel="noopener" class="p-telegram-deep-link" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;font-size:11px;font-weight:700;text-decoration:none;border-radius:8px;background:rgba(76,127,110,0.1);color:#4C7F6E;border:1px solid rgba(76,127,110,0.2);transition:all 0.15s;">
+                                                    <svg viewBox="0 0 18 18" width="14" height="14"><path d="M14.5 2.7a.5.5 0 0 0-.5-.1L1.5 7.6a.7.7 0 0 0 0 1.3l4 1.5 5.5-4.3-3.5 4.7 4 3a.5.5 0 0 0 .8-.4L14.8 3.2a.5.5 0 0 0-.3-.5z" fill="currentColor"/></svg>
+                                                    Открыть Telegram
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="p-msg" id="profileEditMsg"></div>
+                                </div>
+                            </div>
+                            <!-- WALLETS -->
+                            <div class="p-card" id="profileMyWallets">
+                                <div class="p-card-header">
+                                    <svg viewBox="0 0 20 20" width="16" height="16" fill="none"><path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v1a2 2 0 00-2 2v2a2 2 0 002 2v1a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="10" r="1.5" fill="currentColor"/></svg>
+                                    <span>Мои кошельки</span>
+                                    <span class="p-card-badge" id="profileWalletCount">0</span>
+                                </div>
+                                <div class="p-card-body">
+                                    <div class="p-wallet-list" id="myWalletList">
+                                        <div class="p-wallet-empty">Нет привязанных кошельков</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- REFERRAL -->
+                            <div class="p-card" id="profileReferralSection" style="display:none">
+                                <div class="p-card-header">
+                                    <svg viewBox="0 0 20 20" width="16" height="16"><path d="M5.5 13A4.5 4.5 0 0110 8.5 4.5 4.5 0 0114.5 13M10 8.5a3 3 0 100-6 3 3 0 000 6zM3 17c0-2.5 2.5-4 5-4s5 1.5 5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+                                    <span>Реферальная программа</span>
+                                    <span class="p-card-badge" id="profileRefLevel" style="color:#4C7F6E">PRO</span>
+                                </div>
+                                <div class="p-card-body">
+                                    <div class="p-ref-hero-text">Зарабатывайте до 40% комиссий с приглашенных и получайте скидку на оплату тарифа</div>
+                                    <div class="p-ref-promo-box">
+                                        <span class="p-ref-promo-label">Ваш промокод</span>
+                                        <div class="p-ref-promo-row">
+                                            <input type="text" class="p-ref-promo-input" id="profilePromoCodeDisplay" value="polywin-..." readonly>
+                                            <button class="p-btn p-btn-primary" id="profilePromoCodeCopyBtn"><svg viewBox="0 0 16 16" width="13" height="13"><rect x="5" y="2" width="10" height="11" rx="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2 5v9a1 1 0 001 1h8" stroke="currentColor" stroke-width="1.3" fill="none"/></svg></button>
+                                        </div>
+                                    </div>
+                                    <div class="p-ref-rank-status" id="profileRefRankStatus">
+                                        <div class="p-ref-rank-status-header">
+                                            <span class="p-ref-rank-status-label">Текущий ранг</span>
+                                            <div class="p-ref-rank-badge-box" id="profileRefCurrentRankBox">
+                                                <span class="p-ref-rank-badge-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2l2 5 5 .5-3.5 3.5L14.5 16l-4.5-2.5L5.5 16l1-5L3 7.5 8 7l2-5z"/></svg></span>
+                                                <span class="p-ref-rank-badge-val" id="profileRefCurrentRank">—</span>
+                                            </div>
+                                        </div>
+                                        <div class="p-ref-rank-detail" id="profileRefRankDetail">
+                                            <div class="p-ref-rank-detail-row"><svg viewBox="0 0 16 16" width="11" height="11"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Требуется: <strong id="profileRefRankReq">—</strong></span></div>
+                                            <div class="p-ref-rank-detail-row"><svg viewBox="0 0 16 16" width="11" height="11"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5 8l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><span>Награда: <strong id="profileRefRankReward">—</strong></span></div>
+                                        </div>
+                                        <div class="p-ref-rank-bar-wrap">
+                                            <div class="p-ref-rank-bar-bg">
+                                                <div class="p-ref-rank-bar-fill" id="profileRefRankBar" style="width:0%"></div>
+                                            </div>
+                                            <span class="p-ref-rank-bar-text" id="profileRefRankBarText">0 / 0</span>
+                                        </div>
+                                        <div class="p-ref-rank-next" id="profileRefRankNext">Пригласите друзей, чтобы получить уровень выше</div>
+                                    </div>
+                                    <div class="p-ref-ranks-section">
+                                        <div class="p-ref-rank-title">Для тарифа PRO</div>
+                                        <div class="p-ref-rank-table">
+                                            <div class="p-ref-rank-row"><div class="p-ref-rank-row-inner"><span class="p-ref-rank-level">Уровень 1</span><span class="p-ref-rank-desc">1-5 активных рефералов</span></div><span class="p-ref-rank-reward">8% торговых комиссий, 8% с оплаты тарифа + 3% скидка</span></div>
+                                            <div class="p-ref-rank-row"><div class="p-ref-rank-row-inner"><span class="p-ref-rank-level">Уровень 2</span><span class="p-ref-rank-desc">6-10 активных рефералов</span></div><span class="p-ref-rank-reward">15% торговых комиссий, 10% с оплаты тарифа + 6% скидка</span></div>
+                                            <div class="p-ref-rank-row"><div class="p-ref-rank-row-inner"><span class="p-ref-rank-level">Уровень 3</span><span class="p-ref-rank-desc">10+ активных рефералов</span></div><span class="p-ref-rank-reward">20% торговых комиссий, 20% с оплаты тарифа + 10% скидка</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="p-ref-ranks-section">
+                                        <div class="p-ref-rank-title">Для тарифа APEX</div>
+                                        <div class="p-ref-rank-table">
+                                            <div class="p-ref-rank-row"><div class="p-ref-rank-row-inner"><span class="p-ref-rank-level">Уровень 1</span><span class="p-ref-rank-desc">1-5 активных рефералов</span></div><span class="p-ref-rank-reward">15% торговых комиссий, 15% с оплаты тарифа + 8% скидка</span></div>
+                                            <div class="p-ref-rank-row"><div class="p-ref-rank-row-inner"><span class="p-ref-rank-level">Уровень 2</span><span class="p-ref-rank-desc">6-10 активных рефералов</span></div><span class="p-ref-rank-reward">25% торговых комиссий, 20% с оплаты тарифа + 12% скидка</span></div>
+                                            <div class="p-ref-rank-row"><div class="p-ref-rank-row-inner"><span class="p-ref-rank-level">Уровень 3</span><span class="p-ref-rank-desc">10+ активных рефералов</span></div><span class="p-ref-rank-reward">40% торговых комиссий, 40% с оплаты тарифа + 15% скидка</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- TARIFF -->
+                            <div class="p-card p-card-tariff" id="profileTariffSection" style="display:none">
+                                <div class="p-card-header">
+                                    <svg viewBox="0 0 20 20" width="16" height="16"><path d="M10 2l2 5 5 .5-3.5 3.5L14.5 16l-4.5-2.5L5.5 16l1-5L3 7.5 8 7l2-5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+                                    <span>Тарифы</span>
+                                    <span class="p-card-badge p-card-badge-plan" id="profileTariffBadge">Free</span>
+                                </div>
+                                <div class="p-card-body">
+                                    <div class="profile-tariff-plans" id="profileTariffPlans"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="nav-tab-content" id="settings-tab">
+                    <div id="settings-content" class="settings-container">
+                        <!-- Appearance -->
+                        <div class="settings-group">
+                            <div class="settings-group-header">Внешний вид</div>
+                            <div class="settings-card">
+                                <div class="settings-item">
+                                    <div class="settings-item-left">
+                                        <div class="settings-item-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg></div>
+                                        <div>
+                                            <div class="settings-item-label">Тема</div>
+                                            <div class="settings-item-desc">Переключение между тёмной и светлой темой</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item-right" id="settingsThemeContainer"></div>
+                                </div>
+                                <div class="settings-item">
+                                    <div class="settings-item-left">
+                                        <div class="settings-item-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 00-1.38-3.56A8.03 8.03 0 0118.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.987 7.987 0 015.08 16zm2.95-8H5.08a7.987 7.987 0 014.33-3.56A15.65 15.65 0 008.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2s.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 01-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg></div>
+                                        <div>
+                                            <div class="settings-item-label">Язык</div>
+                                            <div class="settings-item-desc">Язык интерфейса</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item-right" id="settingsLangContainer"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Navigation -->
+                        <div class="settings-group" id="settingsGroupNav">
+                            <div class="settings-group-header">Навигация</div>
+                            <div class="settings-card">
+                                <div class="settings-item">
+                                    <div class="settings-item-left">
+                                        <div class="settings-item-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></div>
+                                        <div>
+                                            <div class="settings-item-label">Раздел по умолчанию</div>
+                                            <div class="settings-item-desc">Какой раздел открывать при запуске</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item-right" id="settingsDefaultTabContainer"></div>
+                                </div>
+                                <div class="settings-item">
+                                    <div class="settings-item-left">
+                                        <div class="settings-item-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></div>
+                                        <div>
+                                            <div class="settings-item-label">Видимость разделов</div>
+                                            <div class="settings-item-desc">Показывать или скрывать пункты меню</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item-right" id="settingsVisibilityContainer"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Account -->
+                        <div class="settings-group" id="settingsGroupAccount">
+                            <div class="settings-group-header">Аккаунт</div>
+                            <div class="settings-card">
+                                <div class="settings-item">
+                                    <div class="settings-item-left">
+                                        <div class="settings-item-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>
+                                        <div>
+                                            <div class="settings-item-label" id="settingsEmailLabel">Не авторизован</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item-right">
+                                        <button class="settings-btn settings-btn-danger" id="settingsLogoutBtn" style="display:none">Выйти</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Tracker modal -->
@@ -433,6 +695,59 @@
                     </div>
                     <input type="hidden" id="trkEditId" value="">
                 </div>
+            </div>
+        </div>
+
+        <!-- Wallet modal -->
+        <div class="wallet-modal-overlay" id="walletModalOverlay" style="display:none">
+            <div class="wallet-modal">
+                <div class="wallet-modal-header">
+                    <h3 id="walletModalTitle">Новый кошелёк</h3>
+                    <button class="wallet-modal-close" id="walletModalClose">
+                        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </button>
+                </div>
+                <div class="wallet-modal-body">
+                    <div class="wallet-modal-field">
+                        <label>Адрес кошелька</label>
+                        <div class="wallet-modal-address" id="walletModalAddress"></div>
+                        <button class="wallet-modal-key-action" id="walletModalAddrCopy" title="Скопировать адрес" style="margin-top:4px;font-size:0;display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid rgba(48,54,61,0.2);border-radius:6px;background:transparent;color:#8b949e;cursor:pointer">
+                            <svg viewBox="0 0 16 16" width="12" height="12"><rect x="5" y="2" width="10" height="11" rx="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2 5v9a1 1 0 001 1h8" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+                            <span style="font-size:10px;font-weight:600">Копировать</span>
+                        </button>
+                    </div>
+                    <div class="wallet-modal-field">
+                        <label>Приватный ключ</label>
+                        <div class="wallet-modal-key-wrap">
+                            <input type="password" class="wallet-modal-key" id="walletModalKey" readonly spellcheck="false">
+                            <button class="wallet-modal-key-action" id="walletModalKeyToggle" title="Показать ключ">
+                                <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            </button>
+                            <button class="wallet-modal-key-action" id="walletModalKeyCopy" title="Скопировать ключ">
+                                <svg viewBox="0 0 16 16" width="12" height="12"><rect x="5" y="2" width="10" height="11" rx="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2 5v9a1 1 0 001 1h8" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="wallet-modal-field">
+                        <label>Название</label>
+                        <input type="text" id="walletModalName" placeholder="Например: Основной кошелёк" class="wallet-modal-input">
+                    </div>
+                    <div class="wallet-modal-field">
+                        <label>Заметка</label>
+                        <textarea id="walletModalComment" placeholder="Заметка (необязательно)" rows="3" class="wallet-modal-input" style="resize:vertical;min-height:50px"></textarea>
+                    </div>
+                </div>
+                <div class="wallet-modal-footer">
+                    <div class="wallet-modal-footer-left">
+                        <button class="wallet-modal-btn wallet-modal-btn-danger" id="walletModalDelete" style="display:none">Удалить</button>
+                    </div>
+                    <div class="wallet-modal-footer-right">
+                        <button class="wallet-modal-btn wallet-modal-btn-cancel" id="walletModalCancel">Отмена</button>
+                        <button class="wallet-modal-btn wallet-modal-btn-save" id="walletModalSave">Сохранить</button>
+                    </div>
+                </div>
+                <input type="hidden" id="walletModalMode" value="">
+                <input type="hidden" id="walletModalIndex" value="">
             </div>
         </div>
     </div>
