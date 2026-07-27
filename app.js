@@ -603,6 +603,7 @@
             window._callsInterval = null;
             if (window._callsTimerUpdater) { clearInterval(window._callsTimerUpdater); window._callsTimerUpdater = null; }
         }
+        _liveStopCheck();
 
         if (tabName === 'wallet') initWalletTab();
         else if (tabName === 'trade') initTradeTab();
@@ -2176,7 +2177,8 @@
     }
 
     function _renderTradeSplashHtml(container) {
-        var t = _settingsT || function(k) { var m = { 'terminal.hero_title':'Торговый терминал','events.search_placeholder':'Вставьте ссылку Polymarket или slug...','events.search_btn':'Поиск','terminal.feat_ai':'AI agent для торговли','terminal.feat_auto':'Свои автоматизированные системы','terminal.feat_market':'Рыночные ордера','terminal.feat_limit':'Лимитные ордера','terminal.feat_demo':'Демо-счёт $100k','terminal.hero_copy':'Copy Trading','terminal.hero_strategies':'Strategies' }; return m[k] || k; };
+        var _settingsT = typeof settingsT === 'function' ? settingsT : function(k) { var m = { 'terminal.hero_title':'Торговый терминал','events.search_placeholder':'Вставьте ссылку Polymarket или slug...','events.search_btn':'Поиск','terminal.feat_ai':'AI agent для торговли','terminal.feat_auto':'Свои автоматизированные системы','terminal.feat_market':'Рыночные ордера','terminal.feat_limit':'Лимитные ордера','terminal.feat_demo':'Демо-счёт $100k','terminal.hero_copy':'Copy Trading','terminal.hero_strategies':'Strategies' }; return m[k] || k; };
+        var t = _settingsT;
         container.innerHTML = '<div class="tr-initial">'
             + '<div class="tr-hero-card">'
             + '<div class="tr-hero-visual"><svg viewBox="0 0 240 72" width="240" height="72" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="30" y="48" width="20" height="16" rx="3" fill="#4C7F6E" fill-opacity="0.12" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.25"/><rect x="62" y="32" width="20" height="32" rx="3" fill="#4C7F6E" fill-opacity="0.2" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.35"/><rect x="94" y="16" width="20" height="48" rx="3" fill="#4C7F6E" fill-opacity="0.35" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.5"/><rect x="126" y="28" width="20" height="36" rx="3" fill="#4C7F6E" fill-opacity="0.25" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.4"/><rect x="158" y="20" width="20" height="44" rx="3" fill="#4C7F6E" fill-opacity="0.3" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.45"/><rect x="190" y="40" width="20" height="24" rx="3" fill="#4C7F6E" fill-opacity="0.15" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.3"/><path d="M40 48 L72 32 L104 16 L136 28 L168 20 L200 40" stroke="#4C7F6E" stroke-width="1.5" stroke-opacity="0.2" stroke-dasharray="3 3"/></svg></div>'
@@ -2923,6 +2925,28 @@
     var _termPriceInterval = null;
     var _obCache = {};
     var _termOrderInited = false;
+    var _liveBalance = 0;
+    var _liveAllowance = 0;
+    var _liveWalletIdx = -1;
+    var _liveWalletAddr = '';
+    var _liveWalletKey = '';
+    var _liveCheckInterval = null;
+    var _liveOrderInFlight = false;
+
+    var _USDC_ADDR = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+    var _CTF_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8Bd898';
+    var _ERC20_ABI = [
+        'function transfer(address to, uint256 value) returns (bool)',
+        'function balanceOf(address owner) view returns (uint256)',
+        'function decimals() view returns (uint8)',
+        'function approve(address spender, uint256 value) returns (bool)',
+        'function allowance(address owner, address spender) view returns (uint256)'
+    ];
+    var _POLY_RPCS = [
+        'https://polygon.drpc.org',
+        'https://polygon.publicnode.com',
+        'https://polygon.gateway.tenderly.co'
+    ];
 
     function mountTradingPanelOnMarket() {
         var sel = $('ttSelectedMarket');
@@ -2951,13 +2975,29 @@
         var question = m.question || (ev ? ev.title : '');
         var endDate = m.endDate || (ev ? ev.endDate : '');
         var timeLeft = endDate ? calcTimeRemaining(endDate) : '';
+        var showLiveMode = typeof ethers !== 'undefined';
 
         var html = '<div class="tr-terminal">'
             + '<div class="tr-mode-bar">'
-            +   '<button class="tr-mode-btn active" data-mode="demo">Demo Trade</button>'
+            +   '<button class="tr-mode-btn active" data-mode="demo">Demo</button>'
+            + (showLiveMode ? '<button class="tr-mode-btn" data-mode="live">Live</button>' : '')
             +   '<button class="tr-mode-btn" data-mode="copy">Copy</button>'
             +   '<button class="tr-mode-btn" data-mode="strategies">Strategies</button>'
             + '</div>'
+            // ---- WALLET SELECTOR (hidden by default) ----
+            + '<div class="tr-live-wallet-bar" id="trLiveWalletBar" style="display:none">'
+            +   '<select class="tr-live-wallet-sel" id="trLiveWalletSel">'
+            +     '<option value="-1">Выберите кошелёк</option>'
+            +   '</select>'
+            +   '<div class="tr-live-balance-row">'
+            +     '<span class="tr-live-label">USDC:</span>'
+            +     '<span class="tr-live-value" id="trLiveBalance">$0.00</span>'
+            +     '<span class="tr-live-label" style="margin-left:10px">Allowance:</span>'
+            +     '<span class="tr-live-value" id="trLiveAllowance">$0.00</span>'
+            +   '</div>'
+            +   '<div class="tr-live-status" id="trLiveStatus" style="display:none"></div>'
+            + '</div>'
+            // ---- COMMON CONTENT ----
             + '<div class="tr-event-header">'
             +   '<div class="tr-event-title-row">'
             +     '<div class="tr-event-title">' + escHtml(question) + '</div>'
@@ -3016,6 +3056,9 @@
             + '</div>';
 
         sel.innerHTML = html;
+
+        // --- WALLET SELECTOR POPULATE ---
+        _livePopulateWalletSelect();
 
         // Outcome selection
         sel.querySelectorAll('.tr-outcome-card').forEach(function(card) {
@@ -3083,8 +3126,24 @@
                 sel.querySelectorAll('.tr-mode-btn').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
                 _termState = btn.dataset.mode;
+                var wb = document.getElementById('trLiveWalletBar');
+                if (wb) wb.style.display = _termState === 'live' ? 'block' : 'none';
+                if (_termState === 'live') {
+                    _liveCheckCurrentWallet();
+                } else {
+                    _liveStopCheck();
+                }
             };
         });
+
+        // Wallet select change
+        var wsel = document.getElementById('trLiveWalletSel');
+        if (wsel) {
+            wsel.onchange = function() {
+                _liveWalletIdx = parseInt(this.value);
+                _liveCheckCurrentWallet();
+            };
+        }
 
         // Submit button
         var submitBtn = document.getElementById('trSubmitBtn');
@@ -3101,6 +3160,77 @@
         _updateTotal();
         _updatePosDisplay();
         _startTermPriceRefresh();
+    }
+
+    function _livePopulateWalletSelect() {
+        var wsel = document.getElementById('trLiveWalletSel');
+        if (!wsel) return;
+        var wallets = getWallets();
+        var html = '<option value="-1">' + (wallets.length === 0 ? 'Нет кошельков' : 'Выберите кошелёк') + '</option>';
+        wallets.forEach(function(w, i) {
+            var label = (w.name || w.address.substring(0, 10) + '...') + ' (' + w.address.substring(0, 6) + '..)';
+            html += '<option value="' + i + '">' + escHtml(label) + '</option>';
+        });
+        wsel.innerHTML = html;
+        // If previously selected wallet is still available
+        if (_liveWalletIdx >= 0 && _liveWalletIdx < wallets.length) {
+            wsel.value = String(_liveWalletIdx);
+        } else {
+            _liveWalletIdx = -1;
+            _liveWalletAddr = '';
+            _liveWalletKey = '';
+        }
+    }
+
+    function _liveCheckCurrentWallet() {
+        if (_liveWalletIdx < 0) {
+            _liveWalletAddr = '';
+            _liveWalletKey = '';
+            _liveBalance = 0;
+            _liveAllowance = 0;
+            _liveRefreshDisplay();
+            _liveStopCheck();
+            return;
+        }
+        var wallets = getWallets();
+        var w = wallets[_liveWalletIdx];
+        if (!w || !w.privateKey) {
+            _liveWalletAddr = w ? (w.address || '') : '';
+            _liveWalletKey = '';
+            _liveBalance = 0;
+            _liveAllowance = 0;
+            _liveRefreshDisplay();
+            _liveStopCheck();
+            return;
+        }
+        _liveWalletAddr = w.address || '';
+        _liveWalletKey = w.privateKey;
+        _liveSetStatus('Проверка баланса...', false);
+        _liveSetStatus('Проверка баланса...');
+        loadEthersSite().then(function() {
+            _liveBalanceOf(_liveWalletAddr).then(function(b) {
+                _liveBalance = b;
+                _liveAllowanceOf(_liveWalletAddr).then(function(a) {
+                    _liveAllowance = a;
+                    _liveRefreshDisplay();
+                    var amt = parseFloat(document.getElementById('trAmountInput')?.value) || 0;
+                    if (b >= amt && a >= amt) {
+                        _liveSetStatus('✓ Достаточно средств', true);
+                    } else if (b >= amt && a < amt) {
+                        _liveSetStatus('⚠ Требуется approve USDC (' + amt.toFixed(2) + ')');
+                    } else {
+                        _liveSetStatus('✗ Недостаточно USDC (баланс: $' + b.toFixed(2) + ')');
+                    }
+                    _liveStartCheck();
+                }).catch(function(e) {
+                    _liveSetStatus('Ошибка allowance: ' + (e.message || ''));
+                });
+            }).catch(function(e) {
+                _liveSetStatus('Ошибка баланса: ' + (e.message || ''));
+            });
+        }).catch(function(e) {
+            _liveSetStatus('Ошибка ethers: ' + (e.message || ''));
+        });
     }
 
     function _updateTotal() {
@@ -3131,6 +3261,13 @@
         if (!_termSelectedOutcome || !_termMarket) return;
         var amt = parseFloat(document.getElementById('trAmountInput')?.value) || 0;
         if (amt <= 0) { alert('Введите сумму'); return; }
+
+        if (_termState === 'live') {
+            _placeLiveOrder(amt);
+            return;
+        }
+
+        // ---- DEMO MODE ----
         if (amt > _demoBalance) { alert('Недостаточно средств. Баланс: $' + fmtNum(_demoBalance.toFixed(2))); return; }
 
         var prices = _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
@@ -3140,7 +3277,6 @@
         var marketId = _termMarket.conditionId || _termMarket.id;
         var title = _termMarket.question || (_termEvent ? _termEvent.title : '');
 
-        // Demo trade
         _demoBalance -= amt;
         if (!_demoPositions[marketId]) _demoPositions[marketId] = { market: _termMarket, trades: [] };
         _demoPositions[marketId].trades.push({
@@ -3169,31 +3305,155 @@
         }
     }
 
+    function _placeLiveOrder(amt) {
+        if (!_liveWalletKey) { _liveSetStatus('✗ Выберите кошелёк'); return; }
+        if (amt <= 0) { _liveSetStatus('✗ Введите сумму'); return; }
+        if (_liveOrderInFlight) return;
+        _liveOrderInFlight = true;
+        _liveSetBtnLoading(true);
+
+        var prices = _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
+        var price = prices[_termSelectedOutcome.index] ? parseFloat(prices[_termSelectedOutcome.index]) : 0.5;
+        var priceCents = price * 100;
+        var shares = amt / price;
+
+        // Get CLOB token ID
+        var tids = _getClobTokenIds(_termMarket);
+        var tokenId = (tids && tids[_termSelectedOutcome.index]) || '';
+
+        _liveSetStatus('Проверка баланса...');
+
+        loadEthersSite().then(function() {
+            return _liveBalanceOf(_liveWalletAddr).then(function(b) {
+                _liveBalance = b;
+                _liveRefreshDisplay();
+                if (b < amt) {
+                    _liveSetStatus('✗ Недостаточно USDC: $' + b.toFixed(2) + ', нужно $' + amt.toFixed(2));
+                    _liveSetBtnLoading(false);
+                    _liveOrderInFlight = false;
+                    return;
+                }
+                return _liveAllowanceOf(_liveWalletAddr).then(function(a) {
+                    _liveAllowance = a;
+                    _liveRefreshDisplay();
+                    if (a < amt) {
+                        return _liveDoApprove(_liveWalletKey, amt).then(function() {
+                            return _liveDoSubmit(_liveWalletKey, tokenId, amt, priceCents, shares, price);
+                        });
+                    }
+                    return _liveDoSubmit(_liveWalletKey, tokenId, amt, priceCents, shares, price);
+                });
+            });
+        }).catch(function(e) {
+            _liveSetStatus('✗ Ошибка: ' + (e.message || 'Неизвестная ошибка'));
+            _liveSetBtnLoading(false);
+            _liveOrderInFlight = false;
+        });
+    }
+
+    function _liveDoApprove(privateKey, amount) {
+        _liveSetStatus('Approve USDC...');
+        return _liveApprove(privateKey, Math.max(amount * 2, 1000)).then(function() {
+            _liveAllowance = Math.max(amount * 2, 1000);
+            _liveRefreshDisplay();
+            _liveSetStatus('✓ Approve успешен, отправка ордера...');
+        });
+    }
+
+    function _liveDoSubmit(privateKey, tokenId, amt, priceCents, shares, price) {
+        if (!tokenId) {
+            _liveSetStatus('✗ Нет tokenId для этого исхода');
+            _liveSetBtnLoading(false);
+            _liveOrderInFlight = false;
+            return;
+        }
+        _liveSetStatus('Подпись и отправка ордера...');
+
+        return _liveSubmitOrder(privateKey, tokenId, 'BUY', String(priceCents / 100), String(shares)).then(function(result) {
+            var orderId = result.orderID || result.id || result.orderId || 'ok';
+            _liveSetStatus('✓ Ордер размещён! ID: ' + orderId, true);
+            _liveSetBtnLoading(false);
+            _liveOrderInFlight = false;
+
+            var outcomeLabel = _termSelectedOutcome.index === 0 ? 'UP/YES' : 'DOWN/NO';
+            var marketId = _termMarket.conditionId || _termMarket.id;
+            var title = _termMarket.question || (_termEvent ? _termEvent.title : '');
+
+            // Add to live trades
+            var liveTrades = JSON.parse(localStorage.getItem('polyLiveTrades') || '[]');
+            liveTrades.push({
+                id: orderId,
+                wallet: _liveWalletAddr,
+                marketId: marketId,
+                slug: _termMarket.slug || '',
+                outcomeIndex: _termSelectedOutcome.index,
+                outcomeName: outcomeLabel,
+                eventTitle: title,
+                price: price,
+                shares: shares,
+                amount: amt,
+                side: 'BUY',
+                status: 'open',
+                timestamp: Date.now(),
+                order: true
+            });
+            localStorage.setItem('polyLiveTrades', JSON.stringify(liveTrades));
+            _updatePosDisplay();
+
+        }).catch(function(e) {
+            _liveSetStatus('✗ Ошибка ордера: ' + (e.message || JSON.stringify(e)));
+            _liveSetBtnLoading(false);
+            _liveOrderInFlight = false;
+        });
+    }
+
     function _updatePosDisplay() {
         var section = document.getElementById('trPosSection');
         var body = document.getElementById('trPosBody');
         if (!section || !body || !_termMarket) return;
         var marketId = _termMarket.conditionId || _termMarket.id;
-        var posData = _demoPositions[marketId];
-        if (!posData || !posData.trades || posData.trades.length === 0) {
-            section.style.display = 'none';
-            return;
-        }
-        section.style.display = 'block';
+
         var prices = _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
         var html = '';
-        posData.trades.forEach(function(t, i) {
+
+        // Live trades
+        var liveTrades = JSON.parse(localStorage.getItem('polyLiveTrades') || '[]');
+        var marketLiveTrades = liveTrades.filter(function(t) { return String(t.marketId) === String(marketId) && t.side === 'BUY' && t.status === 'open'; });
+        marketLiveTrades.forEach(function(t) {
             var currentPrice = prices[t.outcomeIndex] ? parseFloat(prices[t.outcomeIndex]) : t.price;
             var currentVal = currentPrice * t.shares;
             var pnl = currentVal - t.amount;
             html += '<div class="tr-pos-item">'
-                + '<div class="tr-pos-side">' + escHtml(t.outcomeId) + '</div>'
+                + '<div class="tr-pos-side">' + escHtml(t.outcomeName || (t.outcomeIndex === 0 ? 'UP/YES' : 'DOWN/NO')) + ' <span class="tr-pos-badge-live">LIVE</span></div>'
                 + '<div class="tr-pos-info">'
                 +   '<span class="tr-pos-meta">' + t.shares.toFixed(2) + ' shares @ ' + (t.price * 100).toFixed(1) + '¢</span>'
                 +   '<span class="tr-pos-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl).toFixed(2)) + '</span>'
                 + '</div>'
                 + '</div>';
         });
+
+        // Demo trades
+        var posData = _demoPositions[marketId];
+        if (posData && posData.trades) {
+            posData.trades.forEach(function(t) {
+                var currentPrice = prices[t.outcomeIndex] ? parseFloat(prices[t.outcomeIndex]) : t.price;
+                var currentVal = currentPrice * t.shares;
+                var pnl = currentVal - t.amount;
+                html += '<div class="tr-pos-item">'
+                    + '<div class="tr-pos-side">' + escHtml(t.outcomeId) + ' <span class="tr-pos-badge-demo">DEMO</span></div>'
+                    + '<div class="tr-pos-info">'
+                    +   '<span class="tr-pos-meta">' + t.shares.toFixed(2) + ' shares @ ' + (t.price * 100).toFixed(1) + '¢</span>'
+                    +   '<span class="tr-pos-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl).toFixed(2)) + '</span>'
+                    + '</div>'
+                    + '</div>';
+            });
+        }
+
+        if (!html) {
+            section.style.display = 'none';
+            return;
+        }
+        section.style.display = 'block';
         body.innerHTML = html;
     }
 
@@ -7356,6 +7616,169 @@
         });
         _ethersLoading = p.then(function(v) { _ethersLoading = null; return v; }, function(e) { _ethersLoading = null; throw e; });
         return _ethersLoading;
+    }
+
+    // ====================== LIVE TRADING HELPERS ======================
+    function _liveRpc() {
+        var lastErr;
+        for (var i = 0; i < _POLY_RPCS.length; i++) {
+            try { return new ethers.JsonRpcProvider(_POLY_RPCS[i]); } catch(e) { lastErr = e; }
+        }
+        throw lastErr || new Error('No RPC available');
+    }
+
+    async function _liveBalanceOf(addr) {
+        var p = _liveRpc();
+        var c = new ethers.Contract(_USDC_ADDR, _ERC20_ABI, p);
+        var d = await c.decimals();
+        var b = await c.balanceOf(addr);
+        return parseFloat(ethers.formatUnits(b, d));
+    }
+
+    async function _liveAllowanceOf(addr) {
+        var p = _liveRpc();
+        var c = new ethers.Contract(_USDC_ADDR, _ERC20_ABI, p);
+        var d = await c.decimals();
+        var a = await c.allowance(addr, _CTF_EXCHANGE);
+        return parseFloat(ethers.formatUnits(a, d));
+    }
+
+    async function _liveApprove(privateKey, amount) {
+        var p = _liveRpc();
+        var w = new ethers.Wallet(privateKey, p);
+        var c = new ethers.Contract(_USDC_ADDR, _ERC20_ABI, w);
+        var d = await c.decimals();
+        var amt = ethers.parseUnits(String(amount), d);
+        var tx = await c.approve(_CTF_EXCHANGE, amt);
+        return tx.wait();
+    }
+
+    function _getClobTokenIds(market) {
+        var tids = market.clobTokenIds;
+        if (typeof tids === 'string') { try { tids = JSON.parse(tids); } catch(e) { tids = null; } }
+        return tids;
+    }
+
+    async function _liveSubmitOrder(privateKey, tokenId, side, price, size) {
+        var p = _liveRpc();
+        var w = new ethers.Wallet(privateKey, p);
+        var domain = {
+            name: 'Polymarket CTF',
+            version: '1',
+            chainId: 137,
+            verifyingContract: _CTF_EXCHANGE
+        };
+        var types = {
+            Order: [
+                { name: 'salt', type: 'uint256' },
+                { name: 'maker', type: 'address' },
+                { name: 'signer', type: 'address' },
+                { name: 'taker', type: 'address' },
+                { name: 'tokenId', type: 'uint256' },
+                { name: 'makerAmount', type: 'uint256' },
+                { name: 'takerAmount', type: 'uint256' },
+                { name: 'expiration', type: 'uint256' },
+                { name: 'nonce', type: 'uint256' },
+                { name: 'feeRateBps', type: 'uint256' },
+                { name: 'side', type: 'uint8' },
+                { name: 'signatureType', type: 'uint8' }
+            ]
+        };
+        var priceCents = Math.round(parseFloat(price) * 100);
+        var sizeNum = parseFloat(size);
+        var makerAmount, takerAmount;
+        if (side === 'BUY') {
+            makerAmount = ethers.parseUnits(String(sizeNum * priceCents / 100), 6);
+            takerAmount = ethers.parseUnits(String(sizeNum), 18);
+        } else {
+            makerAmount = ethers.parseUnits(String(sizeNum), 18);
+            takerAmount = ethers.parseUnits(String(sizeNum * priceCents / 100), 6);
+        }
+        var nonce = Math.floor(Math.random() * 1000000000);
+        var expiration = Math.floor(Date.now() / 1000) + 86400 * 30;
+        var salt = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+        var value = {
+            salt: salt,
+            maker: w.address,
+            signer: w.address,
+            taker: '0x0000000000000000000000000000000000000000',
+            tokenId: tokenId,
+            makerAmount: makerAmount.toString(),
+            takerAmount: takerAmount.toString(),
+            expiration: expiration,
+            nonce: nonce,
+            feeRateBps: 0,
+            side: side === 'BUY' ? 0 : 1,
+            signatureType: 0
+        };
+        var signature = await w._signTypedData(domain, types, value);
+        var orderPayload = {
+            tokenID: tokenId,
+            side: side,
+            price: String(priceCents / 100),
+            size: String(sizeNum),
+            type: 'GTC',
+            negRisk: false,
+            owner: w.address,
+            signature: signature,
+            salt: salt,
+            makerAmount: makerAmount.toString(),
+            takerAmount: takerAmount.toString(),
+            expiration: expiration,
+            nonce: nonce,
+            feeRateBps: 0,
+            signatureType: 0,
+            taker: '0x0000000000000000000000000000000000000000'
+        };
+        var resp = await pageFetch(CLOB_API + '/order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(orderPayload)
+        });
+        var result = JSON.parse(resp);
+        return result;
+    }
+
+    function _liveRefreshDisplay() {
+        var balEl = document.getElementById('trLiveBalance');
+        var allowEl = document.getElementById('trLiveAllowance');
+        if (balEl) balEl.textContent = '$' + (_liveBalance || 0).toFixed(2);
+        if (allowEl) allowEl.textContent = '$' + (_liveAllowance || 0).toFixed(2);
+    }
+
+    function _liveStartCheck() {
+        _liveStopCheck();
+        _liveCheckInterval = setInterval(function() {
+            if (!_liveWalletAddr || !_liveWalletKey) return;
+            loadEthersSite().then(function() {
+                _liveBalanceOf(_liveWalletAddr).then(function(b) { _liveBalance = b; _liveRefreshDisplay(); }).catch(function(){});
+                _liveAllowanceOf(_liveWalletAddr).then(function(a) { _liveAllowance = a; _liveRefreshDisplay(); }).catch(function(){});
+            }).catch(function(){});
+        }, 15000);
+    }
+
+    function _liveStopCheck() {
+        if (_liveCheckInterval) { clearInterval(_liveCheckInterval); _liveCheckInterval = null; }
+    }
+
+    var _liveStatusTimeout = null;
+    function _liveSetStatus(msg, isOk) {
+        var el = document.getElementById('trLiveStatus');
+        if (!el) return;
+        if (_liveStatusTimeout) clearTimeout(_liveStatusTimeout);
+        el.textContent = msg;
+        el.style.color = isOk ? '#3fb950' : '#f85149';
+        el.style.display = 'block';
+        if (isOk) {
+            _liveStatusTimeout = setTimeout(function() { el.style.display = 'none'; }, 4000);
+        }
+    }
+
+    function _liveSetBtnLoading(loading) {
+        var btn = document.getElementById('trSubmitBtn');
+        var modeBtns = document.querySelectorAll('.tr-mode-btn');
+        if (btn) { btn.disabled = loading; btn.textContent = loading ? 'Подпись и отправка...' : 'Купить'; }
+        modeBtns.forEach(function(b) { b.disabled = loading; });
     }
 
     // ====================== INIT ======================
