@@ -124,6 +124,14 @@
         return n.toFixed(2);
     }
 
+    function fmtCompact(n) {
+        if (!n) return '0';
+        var num = typeof n === 'string' ? parseFloat(n) : n;
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+        return num.toFixed(2);
+    }
+
     function fmtUSD(n) {
         if (n === undefined || n === null || isNaN(n)) return '$—';
         var sign = n >= 0 ? '' : '-';
@@ -2964,6 +2972,97 @@
         _renderTerminalPanel();
     }
 
+    function parseOutcomes(market) {
+        if (!market) return [];
+        var names, prices;
+        try {
+            names = market.outcomes ? (typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes) : ['Yes', 'No'];
+            prices = market.outcomePrices ? (typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices) : [];
+        } catch(e) { names = ['Yes', 'No']; prices = []; }
+        var result = [];
+        for (var i = 0; i < names.length; i++) {
+            result.push({ name: names[i], price: prices[i] !== undefined ? parseFloat(prices[i]) * 100 : 50 });
+        }
+        return result;
+    }
+
+    var _availableBotAssets = ['BTC', 'ETH', 'SOL'];
+    function _getBotSelectedAssets() {
+        try {
+            var d = JSON.parse(localStorage.getItem('polyBotAssets') || '[]');
+            if (Array.isArray(d)) {
+                var valid = d.filter(function(a) { return _availableBotAssets.indexOf(a) >= 0; });
+                if (valid.length) return valid;
+            }
+        } catch(e) {}
+        return ['BTC', 'ETH', 'SOL'];
+    }
+    function _phoenixGetSelectedAssets() {
+        try {
+            var d = JSON.parse(localStorage.getItem('phxBotAssets') || '[]');
+            if (Array.isArray(d)) {
+                var valid = d.filter(function(a) { return _availableBotAssets.indexOf(a) >= 0; });
+                if (valid.length) return valid;
+            }
+        } catch(e) {}
+        return ['BTC', 'ETH', 'SOL'];
+    }
+
+    function _getActiveProfile() {
+        var b = document.querySelector('.tr-psetup-btn.active');
+        return b ? parseInt(b.dataset.ps) : 1;
+    }
+
+    function _loadProfileCfg(profileIdx) {
+        var defaults = {
+            1: { buy: [10, 25, 100, 500], sell: [25, 50, 75], sellUsd: [0, 0, 0] },
+            2: { buy: [50, 100, 250, 1000], sell: [25, 50, 100], sellUsd: [0, 0, 0] },
+            3: { buy: [100, 500, 1000, 5000], sell: [10, 25, 50], sellUsd: [0, 0, 0] }
+        };
+        try {
+            var saved = JSON.parse(localStorage.getItem('polyPSetupCfg') || '{}');
+            if (saved[profileIdx]) return saved[profileIdx];
+        } catch(e) {}
+        return defaults[profileIdx] || defaults[1];
+    }
+
+    function _updateQuickButtons(pIdx) {
+        var cfg = _loadProfileCfg(pIdx);
+        var qbContainer = document.getElementById('trQuickBuy');
+        if (qbContainer) {
+            var html = '';
+            for (var bi = 0; bi < Math.min(cfg.buy.length, 4); bi++) {
+                html += '<button class="tr-qb-btn" data-amount="' + cfg.buy[bi] + '">$' + cfg.buy[bi] + '</button>';
+            }
+            qbContainer.innerHTML = html;
+            qbContainer.querySelectorAll('.tr-qb-btn').forEach(function(btn) {
+                btn.onclick = function() {
+                    var inp = document.getElementById('trCustomSize');
+                    if (inp) inp.value = btn.dataset.amount;
+                    _updateTermTotals();
+                };
+            });
+        }
+        var qsContainer = document.getElementById('trQuickSell');
+        if (qsContainer) {
+            var html = '';
+            for (var si = 0; si < Math.min(cfg.sell.length, 3); si++) {
+                var usdVal = cfg.sellUsd && cfg.sellUsd[si] ? cfg.sellUsd[si] : 0;
+                html += '<button class="tr-qs-btn" data-pct="' + cfg.sell[si] + '" data-usd="' + usdVal + '">' + cfg.sell[si] + '%</button>';
+            }
+            html += '<button class="tr-qs-btn tr-qs-close">' + (_termT('terminal.close_100') || 'Close 100%') + '</button>';
+            qsContainer.innerHTML = html;
+            qsContainer.querySelectorAll('.tr-qs-btn').forEach(function(btn) {
+                btn.onclick = function() { /* sell logic placeholder */ };
+            });
+        }
+    }
+
+    function _termT(key) {
+        if (typeof settingsT === 'function') return settingsT(key);
+        return key;
+    }
+
     function _renderTerminalPanel() {
         var sel = $('ttSelectedMarket');
         if (!sel || !_termMarket) return;
@@ -2975,150 +3074,626 @@
         var question = m.question || (ev ? ev.title : '');
         var endDate = m.endDate || (ev ? ev.endDate : '');
         var timeLeft = endDate ? calcTimeRemaining(endDate) : '';
-        var showLiveMode = typeof ethers !== 'undefined';
+        var slug = m.slug || (ev ? ev.slug : '');
+        var t = typeof settingsT === 'function' ? settingsT : function(k) { return k; };
+        var demoBal = _demoBalance || 0;
+        var isEnded = m.closed || m.resolved || m.outcome !== undefined;
+        var endedPrice = isEnded ? 0 : null;
+        var markets = ev && ev.markets ? ev.markets : [m];
+        var isSingleMarket = markets.length === 1;
 
-        var html = '<div class="tr-terminal">'
-            + '<div class="tr-mode-bar">'
-            +   '<button class="tr-mode-btn active" data-mode="demo">Demo</button>'
-            + (showLiveMode ? '<button class="tr-mode-btn" data-mode="live">Live</button>' : '')
-            +   '<button class="tr-mode-btn" data-mode="copy">Copy</button>'
-            +   '<button class="tr-mode-btn" data-mode="strategies">Strategies</button>'
-            + '</div>'
-            // ---- WALLET SELECTOR (hidden by default) ----
-            + '<div class="tr-live-wallet-bar" id="trLiveWalletBar" style="display:none">'
-            +   '<select class="tr-live-wallet-sel" id="trLiveWalletSel">'
-            +     '<option value="-1">Выберите кошелёк</option>'
-            +   '</select>'
-            +   '<div class="tr-live-balance-row">'
-            +     '<span class="tr-live-label">USDC:</span>'
-            +     '<span class="tr-live-value" id="trLiveBalance">$0.00</span>'
-            +     '<span class="tr-live-label" style="margin-left:10px">Allowance:</span>'
-            +     '<span class="tr-live-value" id="trLiveAllowance">$0.00</span>'
-            +   '</div>'
-            +   '<div class="tr-live-status" id="trLiveStatus" style="display:none"></div>'
-            + '</div>'
-            // ---- COMMON CONTENT ----
-            + '<div class="tr-event-header">'
-            +   '<div class="tr-event-title-row">'
-            +     '<div class="tr-event-title">' + escHtml(question) + '</div>'
-            +     '<div class="tr-event-timer">' + timeLeft + '</div>'
-            +   '</div>'
-            +   '<div class="tr-event-actions">'
-            +     '<button class="tr-ev-btn tr-call-btn" id="trCallBtn">📣</button>'
-            +   '</div>'
-            + '</div>'
-            + '<div class="tr-outcomes">'
-            +   '<div class="tr-outcome-card" data-idx="0">'
-            +     '<div class="tr-outcome-name">UP / YES</div>'
-            +     '<div class="tr-outcome-price" style="color:#22c55e">' + (upPrice * 100).toFixed(1) + '¢</div>'
-            +   '</div>'
-            +   '<div class="tr-outcome-card" data-idx="1">'
-            +     '<div class="tr-outcome-name">DOWN / NO</div>'
-            +     '<div class="tr-outcome-price" style="color:#ef4444">' + (downPrice * 100).toFixed(1) + '¢</div>'
-            +   '</div>'
-            + '</div>'
-            + '<div class="tr-price-wrap">'
-            +   '<button class="tr-price-step" data-step="-10">−10¢</button>'
-            +   '<button class="tr-price-step" data-step="-5">−5¢</button>'
-            +   '<button class="tr-price-step" data-step="-1">−1¢</button>'
-            +   '<input class="tr-price-input" id="trPriceInput" type="number" step="0.1" value="' + (upPrice * 100).toFixed(1) + '" style="width:60px;text-align:center">'
-            +   '<button class="tr-price-step" data-step="1">+1¢</button>'
-            +   '<button class="tr-price-step" data-step="5">+5¢</button>'
-            +   '<button class="tr-price-step" data-step="10">+10¢</button>'
-            + '</div>'
-            + '<div class="tr-dir-row">'
-            +   '<button class="tr-dir-btn tr-dir-up" data-dir="0"><span class="tr-dir-label">UP</span><span class="tr-dir-bar" id="trDirBar0"><span style="width:' + (upPrice * 100) + '%"></span></span><span class="tr-dir-price" style="color:#22c55e">' + (upPrice * 100).toFixed(1) + '¢</span></button>'
-            +   '<button class="tr-dir-btn tr-dir-down" data-dir="1"><span class="tr-dir-label">DOWN</span><span class="tr-dir-bar" id="trDirBar1"><span style="width:' + (downPrice * 100) + '%"></span></span><span class="tr-dir-price" style="color:#ef4444">' + (downPrice * 100).toFixed(1) + '¢</span></button>'
-            + '</div>'
-            + '<div class="tr-size-row">'
-            +   '<label class="tr-size-label">Сумма ($)</label>'
-            +   '<input class="tr-size-input" id="trAmountInput" type="number" value="100" min="1" step="1">'
-            + '</div>'
-            + '<div class="tr-quick-row">'
-            +   '<button class="tr-qty-btn" data-amt="10">$10</button>'
-            +   '<button class="tr-qty-btn" data-amt="25">$25</button>'
-            +   '<button class="tr-qty-btn" data-amt="100">$100</button>'
-            +   '<button class="tr-qty-btn" data-amt="500">$500</button>'
-            + '</div>'
-            + '<div class="tr-payout-row" id="trPayoutField" style="display:none">'
-            +   '<span class="tr-payout-label">Возможный выигрыш:</span>'
-            +   '<span class="tr-payout-val" id="trPayoutVal">$0.00</span>'
-            +   '<span class="tr-payout-shares" id="trPayoutShares">0 shares</span>'
-            + '</div>'
-            + '<div class="tr-total-row" id="trTotalField">'
-            +   '<span>Total: <strong id="trTotalAmt">$100.00</strong></span>'
-            + '</div>'
-            + '<div class="tr-pos-section" id="trPosSection" style="display:none">'
-            +   '<div class="tr-pos-header">Мои позиции</div>'
-            +   '<div class="tr-pos-body" id="trPosBody"></div>'
-            + '</div>'
-            + '<button class="tr-submit-btn" id="trSubmitBtn">Купить</button>'
+        var html = '<div class="tr-terminal">';
+
+        // 1. MODE BAR
+        html += '<div class="tr-mode-bar">'
+            + '<button class="tr-mode-btn' + (_termState === 'live' ? ' active' : '') + '" data-mode="live">' + (t('terminal.switch_live') || 'Live') + '</button>'
+            + '<button class="tr-mode-btn' + (_termState === 'demo' ? ' active' : '') + '" data-mode="demo">' + (t('terminal.switch_demo') || 'Demo') + '</button>'
+            + '<button class="tr-mode-btn' + (_termState === 'copy' ? ' active' : '') + '" data-mode="copy">' + (t('terminal.switch_copy') || 'Copy') + '</button>'
+            + '<button class="tr-mode-btn' + (_termState === 'strategies' ? ' active' : '') + '" data-mode="strategies">' + (t('terminal.switch_strategies') || 'Strategies') + '</button>'
+            + '<div class="tr-mode-balance" id="trModeBalance" style="display:' + (_termState === 'demo' ? 'flex' : 'none') + '">$' + fmtNum((demoBal || 0).toFixed(0)) + '</div>'
             + '</div>';
+
+        // 2. EVENT HEADER
+        html += '<div class="tr-event-header">'
+            + '<div class="tr-event-title-row">'
+            + '<div class="tr-event-title">' + escHtml(question) + '</div>'
+            + '<div class="tr-event-timer" id="trEventTimer">' + timeLeft + '</div>'
+            + '</div>'
+            + '<div class="tr-event-actions">'
+            + '<button class="tr-ev-btn ev-call-btn" id="trCallBtn" title="Предложить как колл (сигнал)"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M5 8c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h2l4 4V6l-4 4H5zm12 4c0 1.5-.84 2.8-2.1 3.5l.6 1.1c1.6-.9 2.5-2.5 2.5-4.6s-.9-3.7-2.5-4.6l-.6 1.1c1.26.7 2.1 2 2.1 3.5z"/></svg></button>'
+            + '<button class="tr-ev-btn tr-agent-btn" id="trAIAgentBtn"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg><span>' + (t('terminal.ai_agent') || 'AI') + '</span></button>'
+            + (ev && ev.description ? '<button class="tr-ev-btn tr-desc-btn" id="trDescToggle"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg><span>' + (t('terminal.description') || 'Описание') + '</span></button>' : '')
+            + '</div>'
+            + (ev && ev.description ? '<div class="tr-event-desc" id="trEventDesc" style="display:none">' + escHtml(ev.description) + '</div>' : '')
+            + '</div>';
+
+        // 3. CHART SECTION
+        html += '<div class="tr-chart-section" id="trChartSection" style="display:none">'
+            + '<div class="tr-chart-source-bar">'
+            + '<button class="tr-chart-src active" data-src="tv">TradingView</button>'
+            + '<button class="tr-chart-src" data-src="cl">Chainlink</button>'
+            + '</div>'
+            + '<div class="tr-chart-body" id="trChartBody">'
+            + '<div class="tr-chart-empty" id="trChartEmpty">' + (t('terminal.chart_empty') || 'Выберите источник графика') + '</div>'
+            + '<div class="tr-chart-container" id="trChartContainer"></div>'
+            + '</div>'
+            + '</div>';
+
+        // 4. AI SECTION
+        html += '<div class="tr-ai-section" id="ev-ai-section" style="display:none">'
+            + '<div class="tr-section-title-bar">'
+            + '<span>' + (t('events.ai_title') || 'AI Ассистент') + '</span>'
+            + '<button class="tr-section-close" id="trAIClose">&times;</button>'
+            + '</div>'
+            + '<div class="ev-ai-body" id="ev-ai-body">'
+            + '<div class="ev-ai-msgs" id="ev-ai-msgs"></div>'
+            + '<div class="ev-ai-input-row">'
+            + '<input class="tr-ai-input" id="ev-ai-input" type="text" placeholder="' + (t('events.ai_placeholder') || 'Задайте вопрос...') + '">'
+            + '<button class="tr-ai-send" id="ev-ai-send">\u2192</button>'
+            + '</div>'
+            + '</div>'
+            + '</div>';
+
+        // 5. FAVORITES SECTION
+        html += '<div class="ev-my-wallets-section" id="trFavoritesSection" style="display:none">'
+            + '<div class="ev-favorites-header" id="trFavoritesHeader" style="cursor:pointer">'
+            + '<svg class="ev-favorites-toggle-icon" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>'
+            + '<h3 class="ev-section-title" style="margin:0;flex:1">' + escHtml(t('events.my_wallets_title') || 'Мои кошельки') + '</h3>'
+            + '</div>'
+            + '<div class="ev-favorites-body" id="trFavoritesBody">'
+            + '<div id="tr-favorites-content"><div class="ev-loading" style="padding:20px"><span class="ev-spinner"></span></div></div>'
+            + '</div>'
+            + '</div>';
+
+        // 6. SMART/WHALE SECTION
+        html += '<div class="ev-my-wallets-section" id="trSmartWhaleSection" style="display:none">'
+            + '<div class="ev-favorites-header" id="trSmartWhaleHeader" style="cursor:pointer">'
+            + '<svg class="ev-favorites-toggle-icon" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>'
+            + '<h3 class="ev-section-title" style="margin:0;flex:1">Smart/Whale (WR 60%+ / $30k+)</h3>'
+            + '</div>'
+            + '<div class="ev-favorites-body" id="trSmartWhaleBody">'
+            + '<div id="tr-smartwhale-content"><div class="ev-loading" style="padding:20px"><span class="ev-spinner"></span></div></div>'
+            + '</div>'
+            + '</div>';
+
+        // 7. MULTI-MARKET TABLE (conditional)
+        if (!isSingleMarket) {
+            html += '<div class="ev-markets-section" id="trTerminalMarkets">';
+            html += '<div class="ev-markets-header" id="trMarketsHeader" style="cursor:pointer">';
+            html += '<svg class="ev-markets-toggle-icon" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>';
+            html += '<h3 class="ev-section-title" style="margin:0">' + escHtml((t('events.markets_title') || 'Рынки ({n})').replace('{n}', markets.length)) + '</h3>';
+            html += '</div>';
+            html += '<div class="ev-markets-body" id="trMarketsBody">';
+            html += '<div class="ev-market-row ev-market-row-header">';
+            html += '<div class="ev-market-info"><span class="ev-market-title ev-market-title-header">' + escHtml(t('events.market_label') || 'Рынок') + '</span>';
+            html += '<div class="ev-market-stats-row"><span class="ev-market-stat ev-market-stat-header">Vol</span><span class="ev-market-stat ev-market-stat-header">Spread</span></div></div>';
+            html += '<span class="ev-market-outcomes-label">Price</span></div>';
+            markets.forEach(function(mk, mi) {
+                var mOutcomes = parseOutcomes(mk);
+                var mTitle = mk.question || mk.title || 'Market ' + (mi + 1);
+                var mVolume = fmtCompact(parseFloat(mk.volume || mk.volume24hr || mk.liquidity || 0));
+                var spreadVal = mOutcomes.length >= 2 ? Math.abs(mOutcomes[0].price - (mOutcomes[1] ? mOutcomes[1].price : 0)) : 0;
+                var spread = spreadVal.toFixed(1);
+                var yesP = mOutcomes.length > 0 ? mOutcomes[0].price : 50;
+                var barPct = Math.min(Math.max(yesP, 3), 97);
+                html += '<div class="ev-market-row" data-market-id="' + escHtml(mk.id || mk.conditionId || '') + '">';
+                html += '<div class="ev-market-info"><span class="ev-market-title" title="' + escHtml(mTitle) + '">' + escHtml(mTitle) + '</span>';
+                html += '<div class="ev-market-stats-row"><span class="ev-market-stat">$' + mVolume + '</span><span class="ev-market-stat">' + spread + '%</span></div></div>';
+                html += '<div class="ev-market-actions"><div class="ev-price-bar"><div class="ev-price-bar-fill" style="width:' + barPct + '%"></div></div>';
+                html += '<div class="ev-price-btns">';
+                mOutcomes.forEach(function(o, oi) {
+                    var lc = o.name.toLowerCase().trim();
+                    var isYes = lc === 'yes' || lc === 'up';
+                    var isNo = lc === 'no' || lc === 'down';
+                    var colorCls = isYes ? 'ev-outcome-yes' : (isNo ? 'ev-outcome-no' : '');
+                    html += '<button class="ev-outcome-btn ' + colorCls + '" data-market="' + mk.id + '" data-outcome="' + oi + '">'
+                        + '<span class="ev-outcome-name-text">' + escHtml(o.name) + '</span> '
+                        + '<span class="ev-outcome-price" id="trOPrice_' + mk.id + '_' + oi + '">' + (endedPrice !== null ? endedPrice : o.price) + '\u00a2</span></button>';
+                });
+                html += '</div></div></div>';
+            });
+            html += '</div></div>';
+        }
+
+        // 8. ORDER FORM
+        html += '<div class="tr-order-form">';
+
+        // 8a. Wallet Row
+        html += '<div class="tr-wallet-row" id="trWalletRow" style="display:' + (_termState === 'live' ? '' : 'none') + '">'
+            + '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>'
+            + '<span class="tr-wallet-lbl">' + (t('terminal.wallet_title') || 'Wallet') + '</span>'
+            + '<select class="tr-wallet-sel" id="trTermWalletSelect"></select>'
+            + '</div>';
+
+        // 8b. Balance Row
+        html += '<div id="trTermBalRow" class="tr-term-bal-row" style="display:' + (_termState === 'live' ? '' : 'none') + '">'
+            + '<div class="tr-term-bal-addr" id="trTermAddr"></div>'
+            + '<div class="tr-term-bal-item"><span class="tr-term-bal-label">POL</span><span class="tr-term-bal-value" id="trTermBal">...</span></div>'
+            + '<div class="tr-term-bal-item"><span class="tr-term-bal-label">USDC</span><span class="tr-term-bal-value" id="trTermUSDC">...</span></div>'
+            + '</div>';
+
+        // 8c. Recent Trades
+        html += '<div id="trTermRecent" class="tr-term-recent" style="display:' + (_termState === 'live' ? '' : 'none') + '">'
+            + '<div class="tr-term-recent-header">Последние сделки</div>'
+            + '<div id="trTermRecentList"></div>'
+            + '</div>';
+
+        // 8d. Separator
+        html += '<div class="tr-term-sep" id="trTermSep" style="display:' + (_termState === 'live' ? '' : 'none') + '"></div>';
+
+        // 8e. P-setups
+        html += '<div class="tr-psetups">'
+            + '<button class="tr-psetup-btn active" data-ps="1">P1</button>'
+            + '<button class="tr-psetup-btn" data-ps="2">P2</button>'
+            + '<button class="tr-psetup-btn" data-ps="3">P3</button>'
+            + '<button class="tr-psetup-edit" id="trPSetupEdit">\u270F\uFE0F</button>'
+            + '</div>';
+
+        // 8f. Quick Buy (from profile config)
+        html += (function() {
+            var pIdx = _getActiveProfile();
+            var cfg = _loadProfileCfg(pIdx);
+            var btns = '<div class="tr-quick-row" id="trQuickBuy">';
+            for (var bi = 0; bi < Math.min(cfg.buy.length, 4); bi++) {
+                btns += '<button class="tr-qb-btn" data-amount="' + cfg.buy[bi] + '">$' + cfg.buy[bi] + '</button>';
+            }
+            return btns + '</div>';
+        })();
+
+        // 8g. Size Field
+        html += '<div class="tr-field tr-size-field">'
+            + '<label>' + (t('terminal.amount') || 'Сумма ($)') + '</label>'
+            + '<input type="number" class="tr-input" id="trCustomSize" placeholder="0.00" min="0" step="any">'
+            + '</div>';
+
+        // 8h. Payout Field
+        html += '<div class="tr-field tr-payout-field" id="trPayoutField" style="display:none">'
+            + '<label>' + (t('terminal.possible_win') || 'Возможный выигрыш') + '</label>'
+            + '<span class="tr-payout-val" id="trPayoutVal">$0.00</span>'
+            + '<span class="tr-payout-shares" id="trPayoutShares"></span>'
+            + '</div>';
+
+        // 8i. Type Group
+        html += '<div class="tr-type-group">'
+            + '<button class="tr-type-btn active" data-type="market">' + (t('terminal.market') || 'Market') + '</button>'
+            + '<button class="tr-type-btn" data-type="limit">' + (t('terminal.limit') || 'Limit') + '</button>'
+            + '</div>';
+
+        // 8j. Direction
+        html += '<div class="tr-direction">'
+            + '<button class="tr-dir-btn tr-dir-up active" id="trDirUp">'
+            + '<div class="tr-dir-top"><span class="tr-dir-arrow">\u25B2</span><span class="tr-dir-label">UP</span><span class="tr-dir-price" id="trUpPrice">' + (upPrice * 100).toFixed(1) + '\u00a2</span></div>'
+            + '<div class="tr-dir-bar"><div class="tr-dir-bar-fill" id="trUpBarFill" style="width:' + (upPrice * 100) + '%"></div></div>'
+            + '<div class="tr-dir-liq" id="trUpLiq">liq $0</div>'
+            + '</button>'
+            + '<button class="tr-dir-btn tr-dir-down" id="trDirDown">'
+            + '<div class="tr-dir-top"><span class="tr-dir-arrow">\u25BC</span><span class="tr-dir-label">DOWN</span><span class="tr-dir-price" id="trDownPrice">' + (downPrice * 100).toFixed(1) + '\u00a2</span></div>'
+            + '<div class="tr-dir-bar"><div class="tr-dir-bar-fill" id="trDownBarFill" style="width:' + (downPrice * 100) + '%"></div></div>'
+            + '<div class="tr-dir-liq" id="trDownLiq">liq $0</div>'
+            + '</button>'
+            + '</div>';
+
+        // 8k. Limit Fields
+        html += '<div class="tr-field tr-limit-field" id="trPriceField" style="display:none">'
+            + '<label>' + (t('terminal.limit_price') || 'Limit Price') + '</label>'
+            + '<div class="tr-price-wrap">'
+            + '<input type="number" class="tr-input tr-price-input" id="trPriceInput" placeholder="0.0" min="0" max="100" step="0.1">'
+            + '<button class="tr-price-step" id="trPriceMinus">\u2212</button>'
+            + '<button class="tr-price-step" id="trPricePlus">+</button>'
+            + '</div></div>';
+
+        html += '<div class="tr-field tr-limit-field" id="trSharesField" style="display:none">'
+            + '<label>' + (t('terminal.shares') || 'Shares') + '</label>'
+            + '<input type="number" class="tr-input" id="trSharesInput" placeholder="1" min="1" step="1" value="1">'
+            + '</div>';
+
+        html += '<div class="tr-field tr-limit-field" id="trExpiryField" style="display:none">'
+            + '<label>' + (t('terminal.expiry') || 'Expiry') + '</label>'
+            + '<div class="tr-expiry-dd" id="trExpiryDD">'
+            + '<button class="tr-expiry-trigger" id="trExpiryTrigger" data-value="never">'
+            + '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>'
+            + '<span>' + (t('terminal.never') || 'Never') + '</span>'
+            + '<svg class="tr-expiry-arrow" viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>'
+            + '</button>'
+            + '<div class="tr-expiry-panel" id="trExpiryPanel">'
+            + '<button class="tr-expiry-opt active" data-value="never"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg><span>' + (t('terminal.never') || 'Never') + '</span></button>'
+            + '<button class="tr-expiry-opt" data-value="5m"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg><span>5 min</span></button>'
+            + '<button class="tr-expiry-opt" data-value="1h"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg><span>1 hour</span></button>'
+            + '<button class="tr-expiry-opt" data-value="12h"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg><span>12 hours</span></button>'
+            + '<button class="tr-expiry-opt" data-value="24h"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg><span>24 hours</span></button>'
+            + '<button class="tr-expiry-opt" data-value="eod"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg><span>' + (t('terminal.eod') || 'End of day') + '</span></button>'
+            + '<button class="tr-expiry-opt" data-value="custom"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg><span>' + (t('terminal.custom') || 'Custom') + '</span></button>'
+            + '</div></div></div>';
+
+        // 8l. Sell Section
+        html += '<div class="tr-sell-section">'
+            + '<div class="tr-sell-header"><span class="tr-sell-title">' + (t('terminal.sell') || 'Sell') + '</span>'
+            + '<div class="tr-sell-mode" id="trSellModeSel"><button class="tr-sell-mode-btn active" data-smode="pct">%</button><button class="tr-sell-mode-btn" data-smode="usd">$</button></div></div>'
+            + (function() {
+                var pIdx = _getActiveProfile();
+                var cfg = _loadProfileCfg(pIdx);
+                var btns = '<div class="tr-quick-row" id="trQuickSell">';
+                for (var si = 0; si < Math.min(cfg.sell.length, 3); si++) {
+                    var usdVal = cfg.sellUsd && cfg.sellUsd[si] ? cfg.sellUsd[si] : 0;
+                    btns += '<button class="tr-qs-btn" data-pct="' + cfg.sell[si] + '" data-usd="' + usdVal + '">' + cfg.sell[si] + '%</button>';
+                }
+                btns += '<button class="tr-qs-btn tr-qs-close">' + (t('terminal.close_100') || 'Close 100%') + '</button>';
+                return btns + '</div>';
+            })()
+            + '</div>';
+
+        // 8m. Position Section
+        html += '<div class="tr-position-section" id="trPositionSection" style="display:none">'
+            + '<div class="tr-pos-header"><span class="tr-sell-title">' + (t('terminal.position') || 'Position') + '</span></div>'
+            + '<div class="tr-pos-body">'
+            + '<div class="tr-pos-row"><span class="tr-pos-label">' + (t('terminal.outcome') || 'Outcome') + '</span><span class="tr-pos-val" id="trPosOutcome">\u2014</span></div>'
+            + '<div class="tr-pos-row"><span class="tr-pos-label">' + (t('terminal.shares') || 'Shares') + '</span><span class="tr-pos-val" id="trPosShares">\u2014</span></div>'
+            + '<div class="tr-pos-row"><span class="tr-pos-label">' + (t('terminal.entry_price') || 'Entry Price') + '</span><span class="tr-pos-val" id="trPosEntry">\u2014</span></div>'
+            + '<div class="tr-pos-row"><span class="tr-pos-label">' + (t('terminal.current_value') || 'Current Value') + '</span><span class="tr-pos-val" id="trPosValue">\u2014</span></div>'
+            + '<div class="tr-pos-row"><span class="tr-pos-label">' + (t('terminal.pnl') || 'PnL') + '</span><span class="tr-pos-val" id="trPosPnl">\u2014</span></div>'
+            + '</div></div>';
+
+        // 8n. Alerts Section
+        html += '<div class="tr-alerts-section" id="trAlertsSection">'
+            + '<div class="tr-alerts-scroll">'
+            + '<button class="an-asset-btn active" data-tr-alert-asset="ALL"><span class="an-asset-icon an-asset-icon-all">$</span><span>Все</span></button>'
+            + '<button class="an-asset-btn" data-tr-alert-asset="BTC"><span class="tr-alert-icon">\u0243</span><span>BTC</span></button>'
+            + '<button class="an-asset-btn" data-tr-alert-asset="ETH"><span class="tr-alert-icon">\u27E0</span><span>ETH</span></button>'
+            + '<button class="an-asset-btn" data-tr-alert-asset="SOL"><span class="tr-alert-icon">\u25CE</span><span>SOL</span></button>'
+            + '</div>'
+            + '<div class="tr-alerts-tf-row">'
+            + '<button class="tr-alert-tf-btn active" data-tf="5min">5m</button>'
+            + '<button class="tr-alert-tf-btn" data-tf="15min">15m</button>'
+            + '</div>'
+            + '<div class="tr-alerts-table-wrap" id="trAlertsTableWrap">'
+            + '<div class="tr-alerts-empty">'
+            + '<svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>'
+            + '<p style="font-size:11px;color:#8b949e;margin:6px 0 0">Выберите актив и период</p>'
+            + '</div></div></div>';
+
+        // 8o. Total + Submit
+        html += '<div class="tr-total-submit">'
+            + '<div class="tr-total" id="trTotalField">' + (t('terminal.total') || 'Total') + ': <strong>$0.00</strong></div>'
+            + '<button class="tr-submit" id="trSubmitBtn">' + (t('terminal.place_order') || 'Place Order') + '</button>'
+            + '</div>';
+
+        // 8p. Error msg
+        html += '<div class="tr-error" id="trErrorMsg" style="display:none"></div>';
+        html += '</div>'; // end tr-order-form
+
+        // 9. CUSTOM EXPIRY MODAL
+        html += '<div class="tr-modal-overlay" id="trExpiryModal" style="display:none">'
+            + '<div class="tr-modal">'
+            + '<div class="tr-modal-header"><span>' + (t('terminal.custom_expiry_title') || 'Custom Expiry') + '</span>'
+            + '<button class="tr-modal-close" id="trExpiryModalClose">&times;</button></div>'
+            + '<div class="tr-modal-body">'
+            + '<div class="tr-modal-row">'
+            + '<div class="tr-modal-field"><label>' + (t('terminal.expiry_hours') || 'Hours') + '</label><input type="number" class="tr-input" id="trExpiryHours" value="0" min="0" max="99"></div>'
+            + '<div class="tr-modal-field"><label>' + (t('terminal.expiry_minutes') || 'Minutes') + '</label><input type="number" class="tr-input" id="trExpiryMins" value="0" min="0" max="59"></div>'
+            + '<div class="tr-modal-field"><label>' + (t('terminal.expiry_seconds') || 'Seconds') + '</label><input type="number" class="tr-input" id="trExpirySecs" value="0" min="0" max="59"></div>'
+            + '</div>'
+            + '<button class="tr-submit" id="trExpiryModalApply">' + (t('terminal.apply') || 'Apply') + '</button>'
+            + '</div></div></div>';
+
+        // 10. STRATEGIES SECTION
+        html += '<div class="tr-strategies-section" id="trStrategiesSection" style="display:' + (_termState === 'strategies' ? 'block' : 'none') + '">'
+            + '<div class="tr-strategies-tabs">'
+            + '<button class="tr-strategies-tab active" data-strategy-tab="ai">AI agent</button>'
+            + '<button class="tr-strategies-tab" data-strategy-tab="my">My Strategies</button>'
+            + '</div>'
+            + '<div id="trStrategiesTabAI">'
+            + '<div class="tr-agent">'
+            + '<div class="tr-agent-header">'
+            + '<div class="tr-agent-title">'
+            + '<div class="tr-agent-title-icon"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div>'
+            + '<span class="tr-agent-title-text">AI Agent</span></div>'
+            + '<div class="tr-agent-hdr-r">'
+            + '<span class="tr-agent-copy-flash" id="trCopyFlash"></span>'
+            + '<button class="tr-bot-start-btn" id="trBotStartBtn">\u25b6</button>'
+            + '</div></div>'
+            + '<div class="tr-strategy-selector"><div class="tr-strategy-select-row">'
+            + '<div class="tr-strategy-opt active" data-strategy="clob"><span class="tr-strategy-name">CLOB Arbitrage</span><button class="tr-strategy-info-btn" data-strategy="clob">\u24d8</button></div>'
+            + '<div class="tr-strategy-opt" data-strategy="delta"><span class="tr-strategy-name">Delta Mesh</span><button class="tr-strategy-info-btn" data-strategy="delta">\u24d8</button><span class="tr-strategy-badge">' + (t('terminal.strategy_dev') || 'In Dev') + '</span></div>'
+            + '<div class="tr-strategy-opt" data-strategy="phoenix"><span class="tr-strategy-name">Phoenix</span><button class="tr-strategy-info-btn" data-strategy="phoenix">\u24d8</button></div>'
+            + '</div></div>'
+            + '<div class="tr-agent-wallet"><div class="tr-agent-wallet-label">' + (t('terminal.wallet_title') || 'Wallet') + '</div>'
+            + '<select class="tr-agent-wallet-sel" id="trBotWalletSelect"><option value="">' + (t('terminal.wallet_none') || 'None') + '</option>'
+            + (function() {
+                var wallets = typeof getWallets === 'function' ? getWallets() : [];
+                var activeWallet = localStorage.getItem('polyBotActiveWallet') || '';
+                var opts = '';
+                for (var wi = 0; wi < wallets.length; wi++) {
+                    var w = wallets[wi];
+                    var wAddr = w.address ? w.address.substring(0, 6) + '...' + w.address.substring(38) : '';
+                    var displayName = w.name ? w.name + ' (' + wAddr + ')' : wAddr;
+                    opts += '<option value="' + wi + '"' + (String(wi) === activeWallet ? ' selected' : '') + '>' + escHtml(displayName) + '</option>';
+                }
+                return opts;
+            })()
+            + '</select></div>'
+            + '<div class="tr-agent-rolling"><div class="tr-agent-rolling-label">' + (t('terminal.rolling_label') || 'Rolling') + '</div>'
+            + '<div class="tr-agent-rolling-toggle" id="trBotRollingToggle">'
+            + '<button class="tr-agent-rolling-btn active" data-rolling="1">' + (t('terminal.rolling_on') || 'On') + '</button>'
+            + '<button class="tr-agent-rolling-btn" data-rolling="0">' + (t('terminal.rolling_off') || 'Off') + '</button>'
+            + '</div><div class="tr-agent-rolling-desc">' + (t('terminal.rolling_desc') || 'Auto-reinvest profits') + '</div></div>'
+            // CLOB Content
+            + '<div id="trBotClobContent">'
+            + '<div class="tr-agent-assets"><div class="tr-agent-assets-label">Assets</div>'
+            + '<div class="tr-agent-assets-btns" id="trBotAssetBtns">'
+            + (function() {
+                var sel = _getBotSelectedAssets();
+                return _availableBotAssets.map(function(a) {
+                    var active = sel.indexOf(a) >= 0;
+                    var icon = a === 'BTC' ? '\u0243' : a === 'ETH' ? '\u27E0' : '\u25CB';
+                    return '<button class="tr-agent-asset-btn' + (active ? ' active' : '') + '" data-asset="' + a + '"><span class="tr-agent-asset-icon">' + icon + '</span><span>' + a + '</span></button>';
+                }).join('');
+            })()
+            + '</div></div>'
+            + '<div class="tr-agent-stats"><div class="tr-agent-stat"><div class="tr-agent-stat-label">Balance $</div>'
+            + '<div class="tr-agent-stat-body"><input class="tr-agent-bal-inp" id="trBotBalInput" type="number" value="100000" min="1" step="any"></div></div>'
+            + '<div class="tr-agent-stat" id="trBotStats"></div></div>'
+            + '<div class="tr-agent-stats" style="margin-top:8px">'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Min Spread</div><div class="tr-agent-stat-body" style="gap:2px"><input id="trClobMinSpread" type="number" value="2" min="1" max="20" step="0.5" style="width:50px"><span style="font-size:9px;color:var(--text-tertiary)">\u00a2</span></div></div>'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Rebate</div><div class="tr-agent-stat-body" style="gap:2px"><input id="trClobRebate" type="number" value="20" min="0" max="100" step="1" style="width:50px"><span style="font-size:9px;color:var(--text-tertiary)">%</span></div></div>'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Order Size</div><div class="tr-agent-stat-body" style="gap:2px"><span style="font-size:10px;color:var(--text-tertiary)">$</span><input id="trClobOrderSize" type="number" value="100" min="1" step="any" style="width:60px"></div></div>'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Timeout</div><div class="tr-agent-stat-body" style="gap:2px"><input id="trClobTimeout" type="number" value="3" min="1" max="30" step="1" style="width:40px"><span style="font-size:9px;color:var(--text-tertiary)">sec</span></div></div>'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Gas $</div><div class="tr-agent-stat-body" style="gap:2px"><input id="trClobGasCost" type="number" value="0.02" min="0" max="1" step="0.005" style="width:50px"></div></div>'
+            + '</div>'
+            + '<div class="tr-clob-sim-badge" id="trClobSimBadge" style="display:none"><span class="tr-clob-sim-dot"></span> Simulation Mode</div>'
+            + '<div class="tr-agent-sec"><div class="tr-agent-sec-hdr"><span>Open Positions (<span id="trBotPosCount">0</span>)</span><div class="tr-agent-sec-line"></div></div>'
+            + '<div class="tr-demo-bot-positions" id="trBotPositions"><div class="tr-bot-empty">No open positions</div></div></div>'
+            + '<div class="tr-agent-sec"><div class="tr-agent-sec-hdr"><span>Rounds</span><div class="tr-agent-sec-line"></div>'
+            + '<div class="tr-agent-sec-acts"><button class="tr-agent-btn" id="trBotRoundsClear" style="display:none">Clear All</button><button class="tr-agent-btn" id="trBotRoundsCopy" style="display:none">Copy</button></div></div>'
+            + '<div class="tr-bot-rounds" id="trBotRounds"><div class="tr-bot-rounds-empty">No completed rounds</div></div></div>'
+            + '<div class="tr-agent-sec"><div class="tr-agent-sec-hdr tr-agent-collap collapsed" id="trBotHistToggle">'
+            + '<svg class="tr-agent-arrow" viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>'
+            + '<span>History</span><div class="tr-agent-sec-line"></div>'
+            + '<span class="tr-agent-copy" id="trBotCopyBtn">\u2139 Copy</span></div>'
+            + '<div class="tr-agent-collap-body collapsed" id="trBotHistBody">'
+            + '<div class="tr-agent-filters" id="trBotHistFilters">'
+            + '<button class="tr-bot-hist-filter active" data-filter="all">All</button>'
+            + '<button class="tr-bot-hist-filter" data-filter="BTC">BTC</button>'
+            + '<button class="tr-bot-hist-filter" data-filter="ETH">ETH</button>'
+            + '<button class="tr-bot-hist-filter" data-filter="SOL">SOL</button></div>'
+            + '<div class="tr-demo-bot-log" id="trBotLog"><div class="tr-bot-empty">No operations</div></div></div></div>'
+            + '</div></div>' // end clob + agent
+            // Delta placeholder
+            + '<div id="trBotDeltaContent" style="display:none"><div class="tr-strategy-dev-placeholder"><div class="tr-strategy-dev-icon">\u2699\uFE0F</div>'
+            + '<div class="tr-strategy-dev-title">' + (t('terminal.strategy_dev_title') || 'In Development') + '</div>'
+            + '<div class="tr-strategy-dev-desc">' + (t('terminal.strategy_dev_desc') || 'Coming soon') + '</div></div></div>'
+            // Phoenix Content
+            + '<div id="trBotPhoenixContent" style="display:none">'
+            + '<div class="tr-agent-assets"><div class="tr-agent-assets-label">Assets</div>'
+            + '<div class="tr-agent-assets-btns" id="phxAssetBtns">'
+            + (function() {
+                var sel = _phoenixGetSelectedAssets();
+                return _availableBotAssets.map(function(a) {
+                    var active = sel.indexOf(a) >= 0;
+                    var icon = a === 'BTC' ? '\u0243' : a === 'ETH' ? '\u27E0' : '\u25CB';
+                    return '<button class="tr-agent-asset-btn' + (active ? ' active' : '') + '" data-asset="' + a + '"><span class="tr-agent-asset-icon">' + icon + '</span><span>' + a + '</span></button>';
+                }).join('');
+            })()
+            + '</div></div>'
+            + '<div class="tr-agent-stats tr-agent-stats-phoenix"><div class="tr-agent-stats-row-3">'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Balance</div><div class="tr-agent-stat-body" style="gap:2px"><span style="font-size:10px;color:var(--text-tertiary)">$</span><input class="tr-agent-bal-inp" id="phxBalInput" type="number" value="1000" min="1" step="any" style="width:auto;min-width:40px;max-width:80px;font-size:11px"></div></div>'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Entry</div><div class="tr-agent-stat-body" style="gap:2px"><input id="phxEntryCents" type="number" value="2" min="1" max="10" step="1" style="width:auto;min-width:24px;max-width:50px;font-size:11px"><span style="font-size:9px;color:var(--text-tertiary)">\u00a2</span></div></div>'
+            + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">Target</div><div class="tr-agent-stat-body" style="gap:2px"><input id="phxTargetCents" type="number" value="20" min="5" max="50" step="1" style="width:auto;min-width:24px;max-width:50px;font-size:11px"><span style="font-size:9px;color:var(--text-tertiary)">\u00a2</span></div></div>'
+            + '</div><div class="tr-agent-stats-row-4"><div id="phxStats"></div></div></div>'
+            + '<div class="tr-agent-sec"><div class="tr-agent-sec-hdr"><span>Budget</span><div class="tr-agent-sec-line"></div></div>'
+            + '<div class="tr-agent-sec-body" style="padding:8px 12px">'
+            + '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><select id="phxBudgetMode" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:10px;outline:none"><option value="pct">% \u043e\u0442 \u0431\u0430\u043b\u0430\u043d\u0441\u0430</option><option value="fixed">$ \u0444\u0438\u043a\u0441</option></select></div>'
+            + '<div id="phxBudgetPctWrap" style="display:flex;gap:6px;align-items:center"><span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap">%</span><input id="phxBudgetPct" type="number" value="5" min="1" max="100" step="1" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none"></div>'
+            + '<div id="phxBudgetFixedWrap" style="display:none;gap:6px;align-items:center"><span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap">$</span><input id="phxBudgetFixed" type="number" value="15" min="0.5" step="0.5" style="flex:1;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none"></div>'
+            + '</div></div>'
+            + '<div class="tr-agent-sec"><div class="tr-agent-sec-hdr"><span>Stop Loss</span><div class="tr-agent-sec-line"></div></div>'
+            + '<div class="tr-agent-sec-body" style="padding:8px 12px;display:flex;gap:8px;align-items:center">'
+            + '<label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="phxStopEnabled"> Enabled</label>'
+            + '<span style="font-size:10px;color:var(--text-tertiary)">at</span>'
+            + '<input id="phxStopPct" type="number" value="30" min="1" max="99" step="1" style="width:50px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:11px;outline:none">'
+            + '<span style="font-size:9px;color:var(--text-tertiary)">% of fill</span></div></div>'
+            + '<div class="tr-agent-sec"><div class="tr-agent-sec-hdr"><span>Rounds</span><div class="tr-agent-sec-line"></div>'
+            + '<div class="tr-agent-sec-acts"><button class="tr-agent-btn" id="phxRoundsClear">Clear All</button><button class="tr-agent-btn" id="phxRoundsCopy">Copy</button></div></div>'
+            + '<div class="tr-bot-rounds" id="phxRounds"><div class="tr-bot-rounds-empty">No completed rounds</div></div></div>'
+            + '</div>' // end phoenix
+            + '</div></div>' // end strategies tab AI
+            + '<div id="trStrategiesTabMy" style="display:none"><div class="tr-bot-empty" style="padding:40px 20px;text-align:center;font-size:11px;color:var(--text-tertiary)">Coming soon</div></div>'
+            + '</div>'; // end strategies section
+
+        // 11. STRATEGY INFO MODAL
+        html += '<div class="tr-modal-overlay" id="trStrategyModal" style="display:none">'
+            + '<div class="tr-modal tr-modal-strategy"><div class="tr-modal-header">'
+            + '<span id="trStrategyModalTitle">CLOB Arbitrage</span>'
+            + '<button class="tr-modal-close" id="trStrategyModalClose">&times;</button></div>'
+            + '<div class="tr-modal-body"><div class="tr-strategy-modal-desc" id="trStrategyModalDesc"></div></div></div></div>';
+
+        // 12. COPY SECTION
+        html += '<div class="tr-copy-section" id="trCopySection" style="display:' + (_termState === 'copy' ? 'block' : 'none') + '">'
+            + '<div class="tr-section-info"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>'
+            + '<span>' + (t('terminal.copy_config') || 'Copy Trading') + '</span></div>'
+            + '<div class="tr-copy-desc">' + (t('terminal.copy_desc') || 'Настройте копирование сделок') + '</div>'
+            + '<div class="tr-copy-wallets" id="trCopyWallets">'
+            + '<div class="tr-copy-input-row">'
+            + '<input class="tr-input tr-copy-input" id="trCopyInput" placeholder="' + (t('terminal.copy_input_ph') || 'Адрес кошелька') + '">'
+            + '<button class="tr-copy-add-btn" id="trCopyAddBtn">+</button></div>'
+            + '<div class="tr-copy-list" id="trCopyList"></div></div>'
+            + '<div class="tr-copy-status" id="trCopyStatus"></div></div>';
+
+        // 13. BALANCE MODAL
+        html += '<div class="tr-bal-modal" id="trBalModal" style="display:none">'
+            + '<div class="tr-bal-modal-overlay" id="trBalOverlay"></div>'
+            + '<div class="tr-bal-modal-box">'
+            + '<div class="tr-bal-modal-header"><span class="tr-bal-modal-title">\u0418\u0437\u043c\u0435\u043d\u0438\u0442\u044c \u0431\u0430\u043b\u0430\u043d\u0441</span><button class="tr-bal-modal-close" id="trBalClose">&times;</button></div>'
+            + '<div class="tr-bal-modal-body"><label class="tr-bal-modal-label">\u041d\u043e\u0432\u044b\u0439 \u0431\u0430\u043b\u0430\u043d\u0441 ($)</label>'
+            + '<input class="tr-bal-modal-input" id="trBalInput" type="number" min="0" step="100">'
+            + '<div class="tr-bal-modal-presets">'
+            + '<button class="tr-bal-preset" data-val="1000">$1 000</button>'
+            + '<button class="tr-bal-preset" data-val="10000">$10 000</button>'
+            + '<button class="tr-bal-preset" data-val="100000">$100 000</button>'
+            + '<button class="tr-bal-preset" data-val="1000000">$1 000 000</button></div></div>'
+            + '<div class="tr-bal-modal-footer"><button class="tr-bal-cancel" id="trBalCancel">\u041e\u0442\u043c\u0435\u043d\u0430</button><button class="tr-bal-apply" id="trBalApply">\u041f\u0440\u0438\u043c\u0435\u043d\u0438\u0442\u044c</button></div>'
+            + '</div></div>';
+
+        // 14. TRACKED WALLETS
+        html += '<div class="tr-wallets-section" id="trWalletsSection" style="display:none">'
+            + '<div class="tr-section-title-bar"><span>' + (t('terminal.tracked_wallets') || 'Tracked Wallets') + '</span>'
+            + '<button class="tr-section-close" id="trWalletsClose">&times;</button></div>'
+            + '<div id="trWalletsContent"><div class="tr-loading">' + (t('events.loading') || 'Loading...') + '</div></div></div>';
+
+        html += '</div>'; // end tr-terminal
 
         sel.innerHTML = html;
 
-        // --- WALLET SELECTOR POPULATE ---
-        _livePopulateWalletSelect();
+        // --- POPULATE WALLET SELECT ---
+        _renderTermWalletSelect();
 
-        // Outcome selection
-        sel.querySelectorAll('.tr-outcome-card').forEach(function(card) {
-            card.onclick = function() {
-                _termSelectedOutcome = { marketId: m.conditionId || m.id, index: parseInt(card.dataset.idx) };
-                sel.querySelectorAll('.tr-outcome-card').forEach(function(c) { c.classList.remove('active'); });
-                card.classList.add('active');
-                _updateTotal();
-                _updateOrderBook();
-            };
-        });
-        // Select first outcome by default
-        var firstOutcome = sel.querySelector('.tr-outcome-card');
-        if (firstOutcome) firstOutcome.onclick();
-
+        // --- BIND EVENTS ---
         // Direction buttons
-        sel.querySelectorAll('.tr-dir-btn').forEach(function(btn) {
-            btn.onclick = function() {
-                var dir = parseInt(btn.dataset.dir);
-                _termSelectedOutcome = { marketId: m.conditionId || m.id, index: dir };
-                sel.querySelectorAll('.tr-dir-btn').forEach(function(b) { b.classList.remove('active'); });
-                btn.classList.add('active');
-                sel.querySelectorAll('.tr-outcome-card').forEach(function(c) { c.classList.remove('active'); });
-                var oc = sel.querySelector('.tr-outcome-card[data-idx="' + dir + '"]');
-                if (oc) oc.classList.add('active');
-                _updateTotal();
+        var dirUp = document.getElementById('trDirUp');
+        var dirDown = document.getElementById('trDirDown');
+        if (dirUp) {
+            dirUp.onclick = function() {
+                _termSelectedOutcome = { marketId: m.conditionId || m.id, index: 0 };
+                document.querySelectorAll('.tr-dir-btn').forEach(function(b) { b.classList.remove('active'); });
+                dirUp.classList.add('active');
+                _updateTermTotals();
                 _updateOrderBook();
             };
-        });
+        }
+        if (dirDown) {
+            dirDown.onclick = function() {
+                _termSelectedOutcome = { marketId: m.conditionId || m.id, index: 1 };
+                document.querySelectorAll('.tr-dir-btn').forEach(function(b) { b.classList.remove('active'); });
+                dirDown.classList.add('active');
+                _updateTermTotals();
+                _updateOrderBook();
+            };
+        }
+        if (dirUp) dirUp.onclick();
 
-        // Price steps
-        sel.querySelectorAll('.tr-price-step').forEach(function(btn) {
+        // Quick buy buttons
+        sel.querySelectorAll('.tr-qb-btn').forEach(function(btn) {
             btn.onclick = function() {
-                var input = document.getElementById('trPriceInput');
-                if (!input) return;
-                var step = parseFloat(btn.dataset.step);
-                var val = (parseFloat(input.value) || 0) + step;
-                input.value = Math.max(0.1, Math.min(99.9, val)).toFixed(1);
-                _updateTotal();
+                var inp = document.getElementById('trCustomSize');
+                if (inp) inp.value = btn.dataset.amount;
+                _updateTermTotals();
             };
         });
-        var priceInput = document.getElementById('trPriceInput');
-        if (priceInput) {
-            priceInput.oninput = function() { _updateTotal(); };
+
+        // Custom size input
+        var szInp = document.getElementById('trCustomSize');
+        if (szInp) {
+            szInp.oninput = function() { _updateTermTotals(); };
+            szInp.onkeyup = function() { _updateTermTotals(); };
         }
 
-        // Amount input
-        var amtInput = document.getElementById('trAmountInput');
-        if (amtInput) {
-            amtInput.oninput = function() { _updateTotal(); };
-        }
-
-        // Quick amount buttons
-        sel.querySelectorAll('.tr-qty-btn').forEach(function(btn) {
+        // Type group toggle
+        sel.querySelectorAll('.tr-type-btn').forEach(function(btn) {
             btn.onclick = function() {
-                var input = document.getElementById('trAmountInput');
-                if (input) input.value = btn.dataset.amt;
-                _updateTotal();
+                sel.querySelectorAll('.tr-type-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var isLimit = btn.dataset.type === 'limit';
+                ['trPriceField', 'trSharesField', 'trExpiryField'].forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el) el.style.display = isLimit ? 'block' : 'none';
+                });
             };
         });
+
+        // Price step buttons
+        var priceMinus = document.getElementById('trPriceMinus');
+        var pricePlus = document.getElementById('trPricePlus');
+        if (priceMinus) priceMinus.onclick = function() {
+            var inp = document.getElementById('trPriceInput');
+            if (inp) { inp.value = Math.max(0, (parseFloat(inp.value) || 0) - 1); _updateTermTotals(); }
+        };
+        if (pricePlus) pricePlus.onclick = function() {
+            var inp = document.getElementById('trPriceInput');
+            if (inp) { inp.value = Math.min(100, (parseFloat(inp.value) || 0) + 1); _updateTermTotals(); }
+        };
+
+        // Expiry dropdown
+        var ddTrigger = document.getElementById('trExpiryTrigger');
+        var ddPanel = document.getElementById('trExpiryPanel');
+        document.addEventListener('click', function(e) {
+            if (ddPanel && !e.target.closest('#trExpiryDD')) ddPanel.classList.remove('open');
+        });
+        if (ddTrigger) {
+            ddTrigger.onclick = function(e) { e.stopPropagation(); if (ddPanel) ddPanel.classList.toggle('open'); };
+        }
+        if (ddPanel) {
+            ddPanel.querySelectorAll('.tr-expiry-opt').forEach(function(opt) {
+                opt.onclick = function() {
+                    ddPanel.querySelectorAll('.tr-expiry-opt').forEach(function(b) { b.classList.remove('active'); });
+                    opt.classList.add('active');
+                    var val = opt.dataset.value;
+                    if (val === 'custom') {
+                        var modal = document.getElementById('trExpiryModal');
+                        if (modal) modal.style.display = 'flex';
+                        ddPanel.classList.remove('open');
+                        return;
+                    }
+                    if (ddTrigger) {
+                        ddTrigger.dataset.value = val;
+                        var label = ddTrigger.querySelector('span');
+                        if (label) label.textContent = opt.querySelector('span').textContent;
+                    }
+                    ddPanel.classList.remove('open');
+                };
+            });
+        }
+
+        // Expiry modal
+        var expModal = document.getElementById('trExpiryModal');
+        var expModalClose = document.getElementById('trExpiryModalClose');
+        var expModalApply = document.getElementById('trExpiryModalApply');
+        if (expModalClose) expModalClose.onclick = function() { if (expModal) expModal.style.display = 'none'; };
+        if (expModal) expModal.onclick = function(e) { if (e.target === expModal) expModal.style.display = 'none'; };
+        if (expModalApply) expModalApply.onclick = function() {
+            var h = parseInt(document.getElementById('trExpiryHours')?.value) || 0;
+            var m2 = parseInt(document.getElementById('trExpiryMins')?.value) || 0;
+            var s = parseInt(document.getElementById('trExpirySecs')?.value) || 0;
+            var total = h * 3600 + m2 * 60 + s;
+            if (total <= 0) return;
+            if (ddTrigger) {
+                ddTrigger.dataset.value = total + 's';
+                var label = ddTrigger.querySelector('span');
+                if (label) label.textContent = h + 'h ' + m2 + 'm ' + s + 's';
+            }
+            if (expModal) expModal.style.display = 'none';
+        };
+
+        // Sell mode toggle
+        sel.querySelectorAll('.tr-sell-mode-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                sel.querySelectorAll('.tr-sell-mode-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var mode = btn.dataset.smode;
+                sel.querySelectorAll('.tr-qs-btn:not(.tr-qs-close)').forEach(function(sb) {
+                    if (mode === 'usd') {
+                        var usd = sb.dataset.usd;
+                        sb.textContent = usd && parseFloat(usd) > 0 ? '$' + parseFloat(usd) : sb.dataset.pct + '%';
+                    } else {
+                        sb.textContent = sb.dataset.pct + '%';
+                    }
+                });
+            };
+        });
+
+        // Quick sell buttons
+        sel.querySelectorAll('.tr-qs-btn').forEach(function(btn) {
+            btn.onclick = function() { /* sell logic placeholder */ };
+        });
+
+        // P-setup buttons
+        sel.querySelectorAll('.tr-psetup-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                sel.querySelectorAll('.tr-psetup-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                _updateQuickButtons(_getActiveProfile());
+            };
+        });
+        var pSetupEdit = document.getElementById('trPSetupEdit');
+        if (pSetupEdit) pSetupEdit.onclick = function() { /* psetup modal placeholder */ };
 
         // Mode switching
         sel.querySelectorAll('.tr-mode-btn').forEach(function(btn) {
@@ -3126,44 +3701,225 @@
                 sel.querySelectorAll('.tr-mode-btn').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
                 _termState = btn.dataset.mode;
-                var wb = document.getElementById('trLiveWalletBar');
-                if (wb) wb.style.display = _termState === 'live' ? 'block' : 'none';
-                if (_termState === 'live') {
-                    _liveCheckCurrentWallet();
-                } else {
-                    _liveStopCheck();
-                }
+                var _isTrade = _termState === 'live' || _termState === 'demo';
+                var bal = document.getElementById('trModeBalance');
+                var strategiesSection = document.getElementById('trStrategiesSection');
+                var copySection = document.getElementById('trCopySection');
+                var walletRow = document.getElementById('trWalletRow');
+                var orderForm = document.querySelector('.tr-order-form');
+                var eventHeader = document.querySelector('.tr-event-header');
+                var marketsSection = document.getElementById('trTerminalMarkets');
+                var alertsSection = document.getElementById('trAlertsSection');
+                var timerEl = document.getElementById('trEventTimer');
+                var aiSection = document.getElementById('ev-ai-section');
+                var favSection = document.getElementById('trFavoritesSection');
+                var whaleSection = document.getElementById('trSmartWhaleSection');
+                var walletsSection = document.getElementById('trWalletsSection');
+                if (bal) bal.style.display = _termState === 'demo' ? 'flex' : 'none';
+                if (strategiesSection) strategiesSection.style.display = _termState === 'strategies' ? 'block' : 'none';
+                if (copySection) copySection.style.display = _termState === 'copy' ? 'block' : 'none';
+                if (walletRow) walletRow.style.display = _termState === 'live' ? '' : 'none';
+                if (orderForm) orderForm.style.display = _isTrade ? '' : 'none';
+                if (eventHeader) eventHeader.style.display = _isTrade ? '' : 'none';
+                if (marketsSection) marketsSection.style.display = _isTrade ? '' : 'none';
+                if (alertsSection) alertsSection.style.display = _isTrade ? '' : 'none';
+                if (timerEl) timerEl.style.display = _isTrade ? '' : 'none';
+                if (aiSection) aiSection.style.display = 'none';
+                if (favSection) favSection.style.display = 'none';
+                if (whaleSection) whaleSection.style.display = 'none';
+                if (walletsSection) walletsSection.style.display = 'none';
+                if (!_isTrade) _liveStopCheck();
+                if (_termState === 'live') _liveCheckCurrentWallet();
             };
         });
 
         // Wallet select change
-        var wsel = document.getElementById('trLiveWalletSel');
+        var wsel = document.getElementById('trTermWalletSelect');
         if (wsel) {
             wsel.onchange = function() {
                 _liveWalletIdx = parseInt(this.value);
-                _liveCheckCurrentWallet();
+                if (_liveWalletIdx >= 0) _liveCheckCurrentWallet();
             };
         }
 
         // Submit button
         var submitBtn = document.getElementById('trSubmitBtn');
-        if (submitBtn) {
-            submitBtn.onclick = function() { _placeTermOrder(); };
-        }
+        if (submitBtn) submitBtn.onclick = function() { _placeTermOrder(); };
 
         // Call button
         var callBtn = document.getElementById('trCallBtn');
-        if (callBtn && _termEvent) {
-            callBtn.onclick = function() { showCallModal('event'); };
+        if (callBtn && _termEvent) callBtn.onclick = function() { showCallModal('event'); };
+
+        // AI Agent button
+        var aiBtn = document.getElementById('trAIAgentBtn');
+        var aiSection = document.getElementById('ev-ai-section');
+        if (aiBtn && aiSection) {
+            aiBtn.onclick = function() {
+                var hidden = aiSection.style.display === 'none';
+                aiSection.style.display = hidden ? 'block' : 'none';
+            };
+        }
+        var aiClose = document.getElementById('trAIClose');
+        if (aiClose && aiSection) aiClose.onclick = function() { aiSection.style.display = 'none'; };
+
+        // Description toggle
+        var descBtn = document.getElementById('trDescToggle');
+        var descEl = document.getElementById('trEventDesc');
+        if (descBtn && descEl) {
+            descBtn.onclick = function() { descEl.style.display = descEl.style.display === 'none' ? 'block' : 'none'; };
         }
 
-        _updateTotal();
+        // Markets collapse toggle
+        var trMH = document.getElementById('trMarketsHeader');
+        var trMB = document.getElementById('trMarketsBody');
+        if (trMH && trMB) {
+            trMH.addEventListener('click', function(e) {
+                e.stopPropagation();
+                trMB.style.display = trMB.style.display === 'none' ? '' : 'none';
+                trMH.classList.toggle('collapsed');
+            });
+        }
+
+        // Favorites collapse toggle
+        var trFH = document.getElementById('trFavoritesHeader');
+        var trFB = document.getElementById('trFavoritesBody');
+        if (trFH && trFB) {
+            trFH.addEventListener('click', function(e) {
+                e.stopPropagation();
+                trFB.style.display = trFB.style.display === 'none' ? '' : 'none';
+                trFH.classList.toggle('collapsed');
+            });
+        }
+
+        // Strategy tabs
+        document.querySelectorAll('.tr-strategies-tab').forEach(function(tab) {
+            tab.onclick = function() {
+                document.querySelectorAll('.tr-strategies-tab').forEach(function(t) { t.classList.remove('active'); });
+                tab.classList.add('active');
+                var tName = tab.dataset.strategyTab;
+                var aiTab = document.getElementById('trStrategiesTabAI');
+                var myTab = document.getElementById('trStrategiesTabMy');
+                if (aiTab) aiTab.style.display = tName === 'ai' ? '' : 'none';
+                if (myTab) myTab.style.display = tName === 'my' ? '' : 'none';
+            };
+        });
+
+        // Strategy option switching
+        var _tradeStrategy = localStorage.getItem('polyBotStrategy') || 'clob';
+        document.querySelectorAll('.tr-strategy-opt').forEach(function(opt) {
+            opt.onclick = function(e) {
+                if (e.target.closest('.tr-strategy-info-btn')) return;
+                document.querySelectorAll('.tr-strategy-opt').forEach(function(o) { o.classList.remove('active'); });
+                opt.classList.add('active');
+                _tradeStrategy = opt.dataset.strategy;
+                try { localStorage.setItem('polyBotStrategy', _tradeStrategy); } catch(e) {}
+                var clobContent = document.getElementById('trBotClobContent');
+                var deltaContent = document.getElementById('trBotDeltaContent');
+                var phoenixContent = document.getElementById('trBotPhoenixContent');
+                if (clobContent) clobContent.style.display = _tradeStrategy === 'clob' ? '' : 'none';
+                if (deltaContent) deltaContent.style.display = _tradeStrategy === 'delta' ? '' : 'none';
+                if (phoenixContent) phoenixContent.style.display = _tradeStrategy === 'phoenix' ? '' : 'none';
+            };
+        });
+
+        // Strategy info buttons
+        document.querySelectorAll('.tr-strategy-info-btn').forEach(function(btn) {
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                var strategy = btn.dataset.strategy;
+                var modal = document.getElementById('trStrategyModal');
+                var title = document.getElementById('trStrategyModalTitle');
+                var desc = document.getElementById('trStrategyModalDesc');
+                if (!modal || !title || !desc) return;
+                var names = { clob: 'CLOB Arbitrage', delta: 'Delta Mesh', phoenix: 'Phoenix' };
+                title.textContent = names[strategy] || 'CLOB Arbitrage';
+                modal.style.display = 'flex';
+            };
+        });
+        var stratModalClose = document.getElementById('trStrategyModalClose');
+        if (stratModalClose) stratModalClose.onclick = function() { var m = document.getElementById('trStrategyModal'); if (m) m.style.display = 'none'; };
+        var stratModal = document.getElementById('trStrategyModal');
+        if (stratModal) stratModal.onclick = function(e) { if (e.target === stratModal) stratModal.style.display = 'none'; };
+
+        // Bot start/stop button
+        var dbBtn = document.getElementById('trBotStartBtn');
+        if (dbBtn) {
+            dbBtn.onclick = function() {
+                dbBtn.textContent = dbBtn.textContent === '\u25b6' ? '\u23f9' : '\u25b6';
+            };
+        }
+
+        // Mode balance click — open balance modal
+        var modeBal = document.getElementById('trModeBalance');
+        if (modeBal) {
+            modeBal.style.cursor = 'pointer';
+            modeBal.onclick = function() {
+                if (_termState === 'demo') {
+                    var balModal = document.getElementById('trBalModal');
+                    var balInput = document.getElementById('trBalInput');
+                    if (balModal && balInput) {
+                        balInput.value = Math.round(_demoBalance || 0);
+                        balModal.style.display = 'flex';
+                    }
+                }
+            };
+        }
+
+        // Balance modal
+        var balModal = document.getElementById('trBalModal');
+        var balOverlay = document.getElementById('trBalOverlay');
+        var balCloseBtn = document.getElementById('trBalClose');
+        var balCancelBtn = document.getElementById('trBalCancel');
+        var balApplyBtn = document.getElementById('trBalApply');
+        var balInput = document.getElementById('trBalInput');
+        function closeBalModal() { if (balModal) balModal.style.display = 'none'; }
+        if (balOverlay) balOverlay.onclick = closeBalModal;
+        if (balCloseBtn) balCloseBtn.onclick = closeBalModal;
+        if (balCancelBtn) balCancelBtn.onclick = closeBalModal;
+        if (balApplyBtn) balApplyBtn.onclick = function() {
+            var val = parseFloat(balInput?.value);
+            if (!isNaN(val) && val >= 0) { _demoBalance = val; localStorage.setItem('polyDemoBalance', String(val)); }
+            closeBalModal();
+            var balEl = document.getElementById('trModeBalance');
+            if (balEl) balEl.textContent = '$' + fmtNum((_demoBalance || 0).toFixed(0));
+        };
+        document.querySelectorAll('.tr-bal-preset').forEach(function(b) {
+            b.onclick = function() { if (balInput) balInput.value = this.dataset.val; };
+        });
+        if (balInput) balInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && balApplyBtn) balApplyBtn.click();
+            if (e.key === 'Escape') closeBalModal();
+        });
+
+        // Event end timer
+        (function() {
+            var timerEl = document.getElementById('trEventTimer');
+            if (!timerEl || !endDate) return;
+            var end = new Date(endDate).getTime();
+            if (isNaN(end)) { timerEl.style.display = 'none'; return; }
+            function _tick() {
+                var diff = end - Date.now();
+                if (diff <= 0) { timerEl.textContent = 'Ended'; return; }
+                var d = Math.floor(diff / 86400000);
+                var h = Math.floor((diff % 86400000) / 3600000);
+                var m2 = Math.floor((diff % 3600000) / 60000);
+                var s = Math.floor((diff % 60000) / 1000);
+                if (d > 0) timerEl.textContent = d + 'd ' + h + 'h ' + m2 + 'm';
+                else if (h > 0) timerEl.textContent = h + 'h ' + m2 + 'm ' + s + 's';
+                else timerEl.textContent = m2 + 'm ' + s + 's';
+            }
+            _tick();
+            setInterval(_tick, 1000);
+        })();
+
+        // Initial UI state
+        _updateTermTotals();
         _updatePosDisplay();
         _startTermPriceRefresh();
     }
 
-    function _livePopulateWalletSelect() {
-        var wsel = document.getElementById('trLiveWalletSel');
+    function _renderTermWalletSelect() {
+        var wsel = document.getElementById('trTermWalletSelect');
         if (!wsel) return;
         var wallets = getWallets();
         var html = '<option value="-1">' + (wallets.length === 0 ? 'Нет кошельков' : 'Выберите кошелёк') + '</option>';
@@ -3172,40 +3928,28 @@
             html += '<option value="' + i + '">' + escHtml(label) + '</option>';
         });
         wsel.innerHTML = html;
-        // If previously selected wallet is still available
-        if (_liveWalletIdx >= 0 && _liveWalletIdx < wallets.length) {
-            wsel.value = String(_liveWalletIdx);
-        } else {
-            _liveWalletIdx = -1;
-            _liveWalletAddr = '';
-            _liveWalletKey = '';
-        }
     }
 
     function _liveCheckCurrentWallet() {
+        var wsel = document.getElementById('trTermWalletSelect');
+        if (!wsel) return;
+        _liveWalletIdx = parseInt(wsel.value);
         if (_liveWalletIdx < 0) {
-            _liveWalletAddr = '';
-            _liveWalletKey = '';
-            _liveBalance = 0;
-            _liveAllowance = 0;
-            _liveRefreshDisplay();
-            _liveStopCheck();
+            _liveWalletAddr = ''; _liveWalletKey = '';
+            _liveBalance = 0; _liveAllowance = 0;
+            _liveRefreshDisplay(); _liveStopCheck();
             return;
         }
         var wallets = getWallets();
         var w = wallets[_liveWalletIdx];
         if (!w || !w.privateKey) {
-            _liveWalletAddr = w ? (w.address || '') : '';
-            _liveWalletKey = '';
-            _liveBalance = 0;
-            _liveAllowance = 0;
-            _liveRefreshDisplay();
-            _liveStopCheck();
+            _liveWalletAddr = w ? (w.address || '') : ''; _liveWalletKey = '';
+            _liveBalance = 0; _liveAllowance = 0;
+            _liveRefreshDisplay(); _liveStopCheck();
             return;
         }
         _liveWalletAddr = w.address || '';
         _liveWalletKey = w.privateKey;
-        _liveSetStatus('Проверка баланса...', false);
         _liveSetStatus('Проверка баланса...');
         loadEthersSite().then(function() {
             _liveBalanceOf(_liveWalletAddr).then(function(b) {
@@ -3213,32 +3957,41 @@
                 _liveAllowanceOf(_liveWalletAddr).then(function(a) {
                     _liveAllowance = a;
                     _liveRefreshDisplay();
-                    var amt = parseFloat(document.getElementById('trAmountInput')?.value) || 0;
-                    if (b >= amt && a >= amt) {
-                        _liveSetStatus('✓ Достаточно средств', true);
-                    } else if (b >= amt && a < amt) {
-                        _liveSetStatus('⚠ Требуется approve USDC (' + amt.toFixed(2) + ')');
-                    } else {
-                        _liveSetStatus('✗ Недостаточно USDC (баланс: $' + b.toFixed(2) + ')');
-                    }
+                    var amt = parseFloat(document.getElementById('trCustomSize')?.value) || 0;
+                    if (b >= amt && a >= amt) _liveSetStatus('✓ Достаточно средств', true);
+                    else if (b >= amt && a < amt) _liveSetStatus('⚠ Требуется approve USDC');
+                    else _liveSetStatus('✗ Недостаточно USDC (баланс: $' + b.toFixed(2) + ')');
                     _liveStartCheck();
-                }).catch(function(e) {
-                    _liveSetStatus('Ошибка allowance: ' + (e.message || ''));
-                });
-            }).catch(function(e) {
-                _liveSetStatus('Ошибка баланса: ' + (e.message || ''));
-            });
-        }).catch(function(e) {
-            _liveSetStatus('Ошибка ethers: ' + (e.message || ''));
-        });
+                }).catch(function(e) { _liveSetStatus('Ошибка allowance: ' + (e.message || '')); });
+            }).catch(function(e) { _liveSetStatus('Ошибка баланса: ' + (e.message || '')); });
+        }).catch(function(e) { _liveSetStatus('Ошибка ethers: ' + (e.message || '')); });
     }
 
-    function _updateTotal() {
-        var price = parseFloat(document.getElementById('trPriceInput')?.value) || 50;
-        var amt = parseFloat(document.getElementById('trAmountInput')?.value) || 0;
-        var totalEl = document.getElementById('trTotalAmt');
+    function _liveRefreshDisplay() {
+        var balEl = document.getElementById('trTermBal');
+        var usdcEl = document.getElementById('trTermUSDC');
+        var addrEl = document.getElementById('trTermAddr');
+        if (addrEl && _liveWalletAddr) addrEl.textContent = _liveWalletAddr.substring(0, 6) + '...' + _liveWalletAddr.substring(38);
+        if (balEl) balEl.textContent = '...';
+        if (usdcEl) usdcEl.textContent = '$' + (_liveBalance || 0).toFixed(2);
+        if (balEl && _liveWalletAddr) {
+            var p = _liveRpc();
+            if (p) p.getBalance(_liveWalletAddr).then(function(b) { if (balEl) balEl.textContent = parseFloat(ethers.formatEther(b)).toFixed(4); }).catch(function(){});
+        }
+    }
+
+    function _updateTermTotals() {
+        var amt = parseFloat(document.getElementById('trCustomSize')?.value) || 0;
+        var totalEl = document.getElementById('trTotalField');
         if (!totalEl) return;
-        var pDec = price / 100;
+
+        // Get current selected direction price
+        var prices = _termMarket && _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
+        var price = 0.5;
+        if (_termSelectedOutcome && prices[_termSelectedOutcome.index] !== undefined) {
+            price = parseFloat(prices[_termSelectedOutcome.index]);
+        }
+        var pDec = price;
         if (pDec > 0 && amt > 0) {
             var shares = amt / pDec;
             var profit = shares * (1 - pDec);
@@ -3248,19 +4001,20 @@
             if (payoutField && payoutVal && payoutShares) {
                 payoutField.style.display = 'flex';
                 payoutVal.textContent = '$' + fmtNum(profit.toFixed(2));
-                payoutShares.textContent = Math.floor(shares) + ' shares @ ' + price.toFixed(1) + '¢';
+                payoutShares.textContent = Math.floor(shares) + ' shares @ ' + (pDec * 100).toFixed(1) + '¢';
             }
+            totalEl.innerHTML = 'Total: <strong>$' + fmtNum(amt.toFixed(2)) + '</strong>';
         } else {
             var payoutField = document.getElementById('trPayoutField');
             if (payoutField) payoutField.style.display = 'none';
+            totalEl.innerHTML = 'Total: <strong>$0.00</strong>';
         }
-        totalEl.textContent = '$' + fmtNum(amt.toFixed(2));
     }
 
     function _placeTermOrder() {
         if (!_termSelectedOutcome || !_termMarket) return;
-        var amt = parseFloat(document.getElementById('trAmountInput')?.value) || 0;
-        if (amt <= 0) { alert('Введите сумму'); return; }
+        var amt = parseFloat(document.getElementById('trCustomSize')?.value) || 0;
+        if (amt <= 0) { _liveSetStatus('✗ Введите сумму'); return; }
 
         if (_termState === 'live') {
             _placeLiveOrder(amt);
@@ -3268,12 +4022,16 @@
         }
 
         // ---- DEMO MODE ----
-        if (amt > _demoBalance) { alert('Недостаточно средств. Баланс: $' + fmtNum(_demoBalance.toFixed(2))); return; }
+        if (amt > _demoBalance) {
+            var stEl = document.getElementById('trErrorMsg');
+            if (stEl) { stEl.textContent = '✗ Недостаточно средств. Баланс: $' + fmtNum(_demoBalance.toFixed(2)); stEl.style.display = 'block'; setTimeout(function() { stEl.style.display = 'none'; }, 3000); }
+            return;
+        }
 
         var prices = _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
         var price = prices[_termSelectedOutcome.index] ? parseFloat(prices[_termSelectedOutcome.index]) : 0.5;
         var shares = amt / price;
-        var outcomeLabel = _termSelectedOutcome.index === 0 ? 'UP/YES' : 'DOWN/NO';
+        var outcomeLabel = _termSelectedOutcome.index === 0 ? 'UP' : 'DOWN';
         var marketId = _termMarket.conditionId || _termMarket.id;
         var title = _termMarket.question || (_termEvent ? _termEvent.title : '');
 
@@ -3294,14 +4052,18 @@
         localStorage.setItem('polyDemoPositions', JSON.stringify(_demoPositions));
 
         _updatePosDisplay();
-        _updateTotal();
+        _updateTermTotals();
 
-        var msg = '✅ Куплено ' + outcomeLabel + ' на $' + fmtNum(amt.toFixed(2)) + ' (' + shares.toFixed(2) + ' акций)';
-        var status = $('ttLinkStatus');
-        if (status) {
-            status.className = 'tt-link-status tt-link-ok';
-            status.textContent = msg;
-            setTimeout(function() { status.textContent = ''; }, 3000);
+        // Update balance badge
+        var balEl = document.getElementById('trModeBalance');
+        if (balEl) balEl.textContent = '$' + fmtNum((_demoBalance || 0).toFixed(0));
+
+        var stEl = document.getElementById('trErrorMsg');
+        if (stEl) {
+            stEl.textContent = '✅ Куплено ' + outcomeLabel + ' на $' + fmtNum(amt.toFixed(2)) + ' (' + shares.toFixed(2) + ' акций)';
+            stEl.style.color = '#3fb950';
+            stEl.style.display = 'block';
+            setTimeout(function() { stEl.style.display = 'none'; }, 3000);
         }
     }
 
@@ -3408,53 +4170,52 @@
     }
 
     function _updatePosDisplay() {
-        var section = document.getElementById('trPosSection');
-        var body = document.getElementById('trPosBody');
-        if (!section || !body || !_termMarket) return;
+        var section = document.getElementById('trPositionSection');
+        if (!section || !_termMarket) return;
         var marketId = _termMarket.conditionId || _termMarket.id;
-
         var prices = _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
-        var html = '';
 
-        // Live trades
+        // Check for any position (live or demo)
         var liveTrades = JSON.parse(localStorage.getItem('polyLiveTrades') || '[]');
         var marketLiveTrades = liveTrades.filter(function(t) { return String(t.marketId) === String(marketId) && t.side === 'BUY' && t.status === 'open'; });
-        marketLiveTrades.forEach(function(t) {
-            var currentPrice = prices[t.outcomeIndex] ? parseFloat(prices[t.outcomeIndex]) : t.price;
-            var currentVal = currentPrice * t.shares;
-            var pnl = currentVal - t.amount;
-            html += '<div class="tr-pos-item">'
-                + '<div class="tr-pos-side">' + escHtml(t.outcomeName || (t.outcomeIndex === 0 ? 'UP/YES' : 'DOWN/NO')) + ' <span class="tr-pos-badge-live">LIVE</span></div>'
-                + '<div class="tr-pos-info">'
-                +   '<span class="tr-pos-meta">' + t.shares.toFixed(2) + ' shares @ ' + (t.price * 100).toFixed(1) + '¢</span>'
-                +   '<span class="tr-pos-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl).toFixed(2)) + '</span>'
-                + '</div>'
-                + '</div>';
-        });
-
-        // Demo trades
         var posData = _demoPositions[marketId];
-        if (posData && posData.trades) {
-            posData.trades.forEach(function(t) {
-                var currentPrice = prices[t.outcomeIndex] ? parseFloat(prices[t.outcomeIndex]) : t.price;
-                var currentVal = currentPrice * t.shares;
-                var pnl = currentVal - t.amount;
-                html += '<div class="tr-pos-item">'
-                    + '<div class="tr-pos-side">' + escHtml(t.outcomeId) + ' <span class="tr-pos-badge-demo">DEMO</span></div>'
-                    + '<div class="tr-pos-info">'
-                    +   '<span class="tr-pos-meta">' + t.shares.toFixed(2) + ' shares @ ' + (t.price * 100).toFixed(1) + '¢</span>'
-                    +   '<span class="tr-pos-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl).toFixed(2)) + '</span>'
-                    + '</div>'
-                    + '</div>';
-            });
-        }
+        var demoLen = posData && posData.trades ? posData.trades.length : 0;
 
-        if (!html) {
+        if (marketLiveTrades.length === 0 && demoLen === 0) {
             section.style.display = 'none';
             return;
         }
+
         section.style.display = 'block';
-        body.innerHTML = html;
+        // Show last trade details in the position section
+        var lastTrade = null;
+        var isDemo = false;
+        if (marketLiveTrades.length > 0) {
+            lastTrade = marketLiveTrades[marketLiveTrades.length - 1];
+        } else if (demoLen > 0) {
+            lastTrade = posData.trades[posData.trades.length - 1];
+            isDemo = true;
+        }
+
+        var outcomeEl = document.getElementById('trPosOutcome');
+        var sharesEl = document.getElementById('trPosShares');
+        var entryEl = document.getElementById('trPosEntry');
+        var valueEl = document.getElementById('trPosValue');
+        var pnlEl = document.getElementById('trPosPnl');
+
+        if (lastTrade) {
+            var currentPrice = prices[lastTrade.outcomeIndex] ? parseFloat(prices[lastTrade.outcomeIndex]) : lastTrade.price;
+            var currentVal = currentPrice * lastTrade.shares;
+            var pnl = currentVal - lastTrade.amount;
+            if (outcomeEl) outcomeEl.textContent = (lastTrade.outcomeName || (lastTrade.outcomeIndex === 0 ? 'UP' : 'DOWN')) + (isDemo ? ' (DEMO)' : ' (LIVE)');
+            if (sharesEl) sharesEl.textContent = lastTrade.shares.toFixed(2);
+            if (entryEl) entryEl.textContent = (lastTrade.price * 100).toFixed(1) + '¢';
+            if (valueEl) valueEl.textContent = '$' + fmtNum(currentVal.toFixed(2));
+            if (pnlEl) {
+                pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl).toFixed(2));
+                pnlEl.style.color = pnl >= 0 ? 'var(--positive)' : 'var(--negative)';
+            }
+        }
     }
 
     function _startTermPriceRefresh() {
@@ -3469,18 +4230,17 @@
                     if (data && data.outcomePrices) {
                         _termMarket.outcomePrices = data.outcomePrices;
                         var prices = JSON.parse(data.outcomePrices);
-                        var dirBars = document.querySelectorAll('.tr-dir-bar span');
-                        var dirPrices = document.querySelectorAll('.tr-dir-price');
-                        var outCards = document.querySelectorAll('.tr-outcome-price');
+                        var upPrice = document.getElementById('trUpPrice');
+                        var downPrice = document.getElementById('trDownPrice');
+                        var upFill = document.getElementById('trUpBarFill');
+                        var downFill = document.getElementById('trDownBarFill');
                         if (prices[0] !== undefined) {
-                            if (dirBars[0]) dirBars[0].style.width = (prices[0] * 100) + '%';
-                            if (dirPrices[0]) dirPrices[0].textContent = (prices[0] * 100).toFixed(1) + '¢';
-                            if (outCards[0]) outCards[0].textContent = (prices[0] * 100).toFixed(1) + '¢';
+                            if (upPrice) upPrice.textContent = (prices[0] * 100).toFixed(1) + '¢';
+                            if (upFill) upFill.style.width = (prices[0] * 100) + '%';
                         }
                         if (prices[1] !== undefined) {
-                            if (dirBars[1]) dirBars[1].style.width = (prices[1] * 100) + '%';
-                            if (dirPrices[1]) dirPrices[1].textContent = (prices[1] * 100).toFixed(1) + '¢';
-                            if (outCards[1]) outCards[1].textContent = (prices[1] * 100).toFixed(1) + '¢';
+                            if (downPrice) downPrice.textContent = (prices[1] * 100).toFixed(1) + '¢';
+                            if (downFill) downFill.style.width = (prices[1] * 100) + '%';
                         }
                         _updatePosDisplay();
                     }
@@ -3488,10 +4248,10 @@
                 .catch(function() {});
         }, 5000);
 
-        // Also watch for demo balance changes
+        // Watch for demo balance changes
         setInterval(function() {
-            var balEl = document.querySelector('.tr-mode-balance');
-            if (balEl) balEl.textContent = '$' + fmtNum(_demoBalance.toFixed(2));
+            var balEl = document.getElementById('trModeBalance');
+            if (balEl && _termState === 'demo') balEl.textContent = '$' + fmtNum((_demoBalance || 0).toFixed(0));
         }, 2000);
     }
 
@@ -3551,54 +4311,91 @@
         if (!sel) return;
         var obSection = sel.querySelector('.tr-ob-section');
         if (!obSection) {
-            // Inject order book after terminal
             var term = sel.querySelector('.tr-terminal');
             if (!term) return;
             var obDiv = document.createElement('div');
             obDiv.className = 'tr-ob-section';
             obDiv.innerHTML = '<div class="tr-ob-header">'
-                + '<span class="tr-ob-title">Order Book</span>'
-                + '<button class="tr-ob-refresh" id="trObRefresh">↻</button>'
+                + '<span class="tr-ob-title"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> Order Book</span>'
+                + '<button class="tr-ob-refresh" id="trObRefresh">\u21bb</button>'
                 + '</div>'
-                + '<div class="tr-ob-table" id="trObBody"></div>'
-                + '<div class="tr-ob-summary" id="trObSummary"></div>';
+                + '<div class="tr-ob-ud">'
+                + '<button class="tr-ob-ud-btn active" id="trObUp">UP</button>'
+                + '<button class="tr-ob-ud-btn" id="trObDown">DOWN</button>'
+                + '</div>'
+                + '<div class="tr-ob-col-headers">'
+                + '<span class="tr-ob-ch-price"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg> Price</span>'
+                + '<span class="tr-ob-ch-size"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M4 9h16v2H4V9zm0 4h10v2H4v-2z"/></svg> Size</span>'
+                + '<span class="tr-ob-ch-total"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> Total</span>'
+                + '</div>'
+                + '<div class="tr-ob-body" id="trObBody"></div>';
             term.after(obDiv);
             var refreshBtn = document.getElementById('trObRefresh');
             if (refreshBtn) refreshBtn.onclick = function() { _updateOrderBook(); };
+            // UP/DOWN toggle
+            var obUp = document.getElementById('trObUp');
+            var obDown = document.getElementById('trObDown');
+            if (obUp && obDown) {
+                obUp.onclick = function() { obUp.classList.add('active'); obDown.classList.remove('active'); _updateOrderBook(); };
+                obDown.onclick = function() { obDown.classList.add('active'); obUp.classList.remove('active'); _updateOrderBook(); };
+            }
         }
+
         var body = document.getElementById('trObBody');
-        var summary = document.getElementById('trObSummary');
         if (!body) return;
 
-        var asks = (book.asks || []).slice(0, 8);
-        var bids = (book.bids || []).slice(0, 8);
+        var asks = (book.asks || []).slice(0, 10);
+        var bids = (book.bids || []).slice(0, 10);
         var norm = function(o) { return Array.isArray(o) ? { price: parseFloat(o[0]), size: parseFloat(o[1]) } : { price: parseFloat(o.price || 0), size: parseFloat(o.size || 0) }; };
         asks = asks.map(norm).sort(function(a, b) { return b.price - a.price; });
         bids = bids.map(norm).sort(function(a, b) { return b.price - a.price; });
 
         var maxAsk = asks.length > 0 ? Math.max.apply(null, asks.map(function(o) { return o.size; })) : 1;
         var maxBid = bids.length > 0 ? Math.max.apply(null, bids.map(function(o) { return o.size; })) : 1;
+        var maxTotal = Math.max(
+            asks.reduce(function(s, o, i, arr) { return s + o.size; }, 0),
+            bids.reduce(function(s, o, i, arr) { return s + o.size; }, 0)
+        ) || 1;
 
         var html = '';
+        // Asks (top to bottom: highest to lowest)
+        var cumAsk = 0;
         asks.forEach(function(o) {
+            cumAsk += o.size;
             var pct = (o.size / maxAsk * 100).toFixed(0);
-            html += '<div class="tr-ob-row tr-ob-ask"><span class="tr-ob-price" style="color:#ef4444">' + (o.price * 100).toFixed(1) + '¢</span><span class="tr-ob-size">' + o.size.toFixed(2) + '</span><span class="tr-ob-bar"><span style="width:' + pct + '%"></span></span></div>';
+            var cumPct = (cumAsk / maxTotal * 100).toFixed(0);
+            html += '<div class="tr-ob-row ask">'
+                + '<span class="tr-ob-price" style="color:#ef4444">' + (o.price * 100).toFixed(2) + '</span>'
+                + '<span class="tr-ob-size">' + o.size.toFixed(2) + '</span>'
+                + '<span class="tr-ob-total">' + cumAsk.toFixed(2) + '</span>'
+                + '<span class="tr-ob-bar" style="width:' + cumPct + '%;background:rgba(239,68,68,0.12)"></span>'
+                + '</div>';
         });
+
+        // Spread
         var bestAsk = asks.length > 0 ? asks[asks.length - 1] : null;
         var bestBid = bids.length > 0 ? bids[0] : null;
         var lastPrice = bestAsk && bestBid ? ((bestAsk.price + bestBid.price) / 2) : (bestAsk ? bestAsk.price : (bestBid ? bestBid.price : 0));
-        var spread = bestAsk && bestBid ? ((bestAsk.price - bestBid.price) * 100).toFixed(1) : '—';
-        html += '<div class="tr-ob-spread"><span>Spread: ' + spread + '¢</span><span>Last: ' + (lastPrice * 100).toFixed(1) + '¢</span></div>';
+        var spread = bestAsk && bestBid ? ((bestAsk.price - bestBid.price) * 100).toFixed(2) : '\u2014';
+        html += '<div class="tr-ob-spread' + (spread !== '\u2014' ? (parseFloat(spread) >= 0 ? ' up' : ' down') : '') + '">'
+            + '<span>Spread: ' + spread + '\u00a2</span>'
+            + '<span>Last: ' + (lastPrice * 100).toFixed(2) + '\u00a2</span>'
+            + '</div>';
+
+        // Bids (top to bottom: highest to lowest)
+        var cumBid = 0;
         bids.forEach(function(o) {
+            cumBid += o.size;
             var pct = (o.size / maxBid * 100).toFixed(0);
-            html += '<div class="tr-ob-row tr-ob-bid"><span class="tr-ob-price" style="color:#22c55e">' + (o.price * 100).toFixed(1) + '¢</span><span class="tr-ob-size">' + o.size.toFixed(2) + '</span><span class="tr-ob-bar"><span style="width:' + pct + '%"></span></span></div>';
+            var cumPct = (cumBid / maxTotal * 100).toFixed(0);
+            html += '<div class="tr-ob-row bid">'
+                + '<span class="tr-ob-price" style="color:#22c55e">' + (o.price * 100).toFixed(2) + '</span>'
+                + '<span class="tr-ob-size">' + o.size.toFixed(2) + '</span>'
+                + '<span class="tr-ob-total">' + cumBid.toFixed(2) + '</span>'
+                + '<span class="tr-ob-bar" style="width:' + cumPct + '%;background:rgba(34,197,94,0.12)"></span>'
+                + '</div>';
         });
         body.innerHTML = html;
-        if (summary) {
-            var totalAsks = asks.reduce(function(s, o) { return s + o.size; }, 0);
-            var totalBids = bids.reduce(function(s, o) { return s + o.size; }, 0);
-            summary.innerHTML = '<span>Asks: ' + totalAsks.toFixed(2) + '</span><span>Bids: ' + totalBids.toFixed(2) + '</span>';
-        }
     }
 
     function renderTradeWallets() {
@@ -6039,7 +6836,39 @@
             'tab.trade': 'Торговля', 'tab.analysis': 'Аналитика',
             'defaultTab': 'Раздел по умолчанию', 'visibility': 'Видимость разделов',
             'visibility.allShown': 'Все показаны', 'visibility.hiddenCount': 'Скрыто {n}',
-            'notAuthorized': 'Не авторизован', 'authorized': 'Авторизован', 'logout': 'Выйти'
+            'notAuthorized': 'Не авторизован', 'authorized': 'Авторизован', 'logout': 'Выйти',
+            'terminal.hero_title': 'Торговый терминал',
+            'events.search_placeholder': 'Вставьте ссылку Polymarket или slug...',
+            'events.search_btn': 'Поиск',
+            'terminal.feat_ai': 'AI agent для торговли',
+            'terminal.feat_auto': 'Свои автоматизированные системы',
+            'terminal.feat_market': 'Рыночные ордера',
+            'terminal.feat_limit': 'Лимитные ордера',
+            'terminal.feat_demo': 'Демо-счёт $100k',
+            'terminal.hero_copy': 'Copy Trading',
+            'terminal.hero_strategies': 'Strategies',
+            'terminal.switch_live': 'Live', 'terminal.switch_demo': 'Demo', 'terminal.switch_copy': 'Copy', 'terminal.switch_strategies': 'Strategies',
+            'terminal.ai_agent': 'AI', 'terminal.description': 'Описание', 'terminal.chart_empty': 'Выберите источник графика',
+            'terminal.wallet_title': 'Кошелёк', 'terminal.amount': 'Сумма ($)', 'terminal.possible_win': 'Возможный выигрыш',
+            'terminal.market': 'Market', 'terminal.limit': 'Limit',
+            'terminal.limit_price': 'Limit Price', 'terminal.shares': 'Акции', 'terminal.expiry': 'Истекает',
+            'terminal.never': 'Никогда', 'terminal.eod': 'До конца дня', 'terminal.custom': 'Своё',
+            'terminal.sell': 'Продажа', 'terminal.close_100': 'Закрыть 100%',
+            'terminal.position': 'Позиция', 'terminal.outcome': 'Исход', 'terminal.entry_price': 'Цена входа',
+            'terminal.current_value': 'Текущая стоимость', 'terminal.pnl': 'PnL',
+            'terminal.total': 'Итого', 'terminal.place_order': 'Разместить ордер',
+            'terminal.apply': 'Применить', 'terminal.custom_expiry_title': 'Свой срок истечения',
+            'terminal.expiry_hours': 'Часы', 'terminal.expiry_minutes': 'Минуты', 'terminal.expiry_seconds': 'Секунды',
+            'terminal.strategy_dev': 'В разработке', 'terminal.strategy_dev_title': 'В разработке', 'terminal.strategy_dev_desc': 'Скоро будет доступно',
+            'terminal.wallet_none': 'Нет кошелька',
+            'terminal.rolling_label': 'Rolling', 'terminal.rolling_on': 'Вкл', 'terminal.rolling_off': 'Выкл', 'terminal.rolling_desc': 'Авто-реинвест прибыли',
+            'terminal.copy_config': 'Copy Trading', 'terminal.copy_desc': 'Настройте копирование сделок',
+            'terminal.copy_input_ph': 'Адрес кошелька',
+            'terminal.tracked_wallets': 'Отслеживаемые кошельки',
+            'events.ai_title': 'AI Ассистент', 'events.ai_placeholder': 'Задайте вопрос...',
+            'events.my_wallets_title': 'Мои кошельки',
+            'events.markets_title': 'Рынки ({n})', 'events.market_label': 'Рынок',
+            'events.loading': 'Загрузка...'
         },
         en: {
             'theme.dark': 'Dark', 'theme.light': 'Light', 'theme.custom': 'Custom',
@@ -6052,7 +6881,39 @@
             'tab.trade': 'Trade', 'tab.analysis': 'Analytics',
             'defaultTab': 'Default tab', 'visibility': 'Menu visibility',
             'visibility.allShown': 'All shown', 'visibility.hiddenCount': '{n} hidden',
-            'notAuthorized': 'Not authorized', 'authorized': 'Authorized', 'logout': 'Log out'
+            'notAuthorized': 'Not authorized', 'authorized': 'Authorized', 'logout': 'Log out',
+            'terminal.hero_title': 'Trading Terminal',
+            'events.search_placeholder': 'Paste Polymarket link or slug...',
+            'events.search_btn': 'Search',
+            'terminal.feat_ai': 'AI agent for trading',
+            'terminal.feat_auto': 'Custom automated systems',
+            'terminal.feat_market': 'Market orders',
+            'terminal.feat_limit': 'Limit orders',
+            'terminal.feat_demo': 'Demo account $100k',
+            'terminal.hero_copy': 'Copy Trading',
+            'terminal.hero_strategies': 'Strategies',
+            'terminal.switch_live': 'Live', 'terminal.switch_demo': 'Demo', 'terminal.switch_copy': 'Copy', 'terminal.switch_strategies': 'Strategies',
+            'terminal.ai_agent': 'AI', 'terminal.description': 'Description', 'terminal.chart_empty': 'Select chart source',
+            'terminal.wallet_title': 'Wallet', 'terminal.amount': 'Amount ($)', 'terminal.possible_win': 'Possible win',
+            'terminal.market': 'Market', 'terminal.limit': 'Limit',
+            'terminal.limit_price': 'Limit Price', 'terminal.shares': 'Shares', 'terminal.expiry': 'Expiry',
+            'terminal.never': 'Never', 'terminal.eod': 'End of day', 'terminal.custom': 'Custom',
+            'terminal.sell': 'Sell', 'terminal.close_100': 'Close 100%',
+            'terminal.position': 'Position', 'terminal.outcome': 'Outcome', 'terminal.entry_price': 'Entry Price',
+            'terminal.current_value': 'Current Value', 'terminal.pnl': 'PnL',
+            'terminal.total': 'Total', 'terminal.place_order': 'Place Order',
+            'terminal.apply': 'Apply', 'terminal.custom_expiry_title': 'Custom Expiry',
+            'terminal.expiry_hours': 'Hours', 'terminal.expiry_minutes': 'Minutes', 'terminal.expiry_seconds': 'Seconds',
+            'terminal.strategy_dev': 'In Dev', 'terminal.strategy_dev_title': 'In Development', 'terminal.strategy_dev_desc': 'Coming soon',
+            'terminal.wallet_none': 'No wallet',
+            'terminal.rolling_label': 'Rolling', 'terminal.rolling_on': 'On', 'terminal.rolling_off': 'Off', 'terminal.rolling_desc': 'Auto-reinvest profits',
+            'terminal.copy_config': 'Copy Trading', 'terminal.copy_desc': 'Configure trade copying',
+            'terminal.copy_input_ph': 'Wallet address',
+            'terminal.tracked_wallets': 'Tracked Wallets',
+            'events.ai_title': 'AI Assistant', 'events.ai_placeholder': 'Ask a question...',
+            'events.my_wallets_title': 'My Wallets',
+            'events.markets_title': 'Markets ({n})', 'events.market_label': 'Market',
+            'events.loading': 'Loading...'
         },
         zh: {
             'theme.dark': '深色', 'theme.light': '浅色', 'theme.custom': '自定义',
@@ -6065,7 +6926,39 @@
             'tab.trade': '交易', 'tab.analysis': '分析',
             'defaultTab': '默认选项卡', 'visibility': '菜单可见性',
             'visibility.allShown': '全部显示', 'visibility.hiddenCount': '隐藏 {n}',
-            'notAuthorized': '未授权', 'authorized': '已授权', 'logout': '退出'
+            'notAuthorized': '未授权', 'authorized': '已授权', 'logout': '退出',
+            'terminal.hero_title': '交易终端',
+            'events.search_placeholder': '粘贴 Polymarket 链接或 slug...',
+            'events.search_btn': '搜索',
+            'terminal.feat_ai': 'AI 交易代理',
+            'terminal.feat_auto': '自定义自动化系统',
+            'terminal.feat_market': '市价订单',
+            'terminal.feat_limit': '限价订单',
+            'terminal.feat_demo': '模拟账户 $100k',
+            'terminal.hero_copy': '跟单交易',
+            'terminal.hero_strategies': '策略',
+            'terminal.switch_live': '实盘', 'terminal.switch_demo': '模拟', 'terminal.switch_copy': '跟单', 'terminal.switch_strategies': '策略',
+            'terminal.ai_agent': 'AI', 'terminal.description': '描述', 'terminal.chart_empty': '选择图表源',
+            'terminal.wallet_title': '钱包', 'terminal.amount': '金额 ($)', 'terminal.possible_win': '可能盈利',
+            'terminal.market': '市价', 'terminal.limit': '限价',
+            'terminal.limit_price': '限价', 'terminal.shares': '份额', 'terminal.expiry': '到期',
+            'terminal.never': '永不', 'terminal.eod': '当天结束', 'terminal.custom': '自定义',
+            'terminal.sell': '卖出', 'terminal.close_100': '平仓 100%',
+            'terminal.position': '仓位', 'terminal.outcome': '结果', 'terminal.entry_price': '入场价',
+            'terminal.current_value': '当前价值', 'terminal.pnl': '盈亏',
+            'terminal.total': '总计', 'terminal.place_order': '下单',
+            'terminal.apply': '应用', 'terminal.custom_expiry_title': '自定义到期',
+            'terminal.expiry_hours': '小时', 'terminal.expiry_minutes': '分钟', 'terminal.expiry_seconds': '秒',
+            'terminal.strategy_dev': '开发中', 'terminal.strategy_dev_title': '开发中', 'terminal.strategy_dev_desc': '即将推出',
+            'terminal.wallet_none': '无钱包',
+            'terminal.rolling_label': '滚动', 'terminal.rolling_on': '开', 'terminal.rolling_off': '关', 'terminal.rolling_desc': '自动复投利润',
+            'terminal.copy_config': '跟单交易', 'terminal.copy_desc': '配置交易复制',
+            'terminal.copy_input_ph': '钱包地址',
+            'terminal.tracked_wallets': '追踪钱包',
+            'events.ai_title': 'AI 助手', 'events.ai_placeholder': '提问...',
+            'events.my_wallets_title': '我的钱包',
+            'events.markets_title': '市场 ({n})', 'events.market_label': '市场',
+            'events.loading': '加载中...'
         }
     };
 
@@ -7740,8 +8633,8 @@
     }
 
     function _liveRefreshDisplay() {
-        var balEl = document.getElementById('trLiveBalance');
-        var allowEl = document.getElementById('trLiveAllowance');
+        var balEl = document.getElementById('trTermUSDC');
+        var allowEl = document.getElementById('trTermAllowance');
         if (balEl) balEl.textContent = '$' + (_liveBalance || 0).toFixed(2);
         if (allowEl) allowEl.textContent = '$' + (_liveAllowance || 0).toFixed(2);
     }
@@ -7764,6 +8657,7 @@
     var _liveStatusTimeout = null;
     function _liveSetStatus(msg, isOk) {
         var el = document.getElementById('trLiveStatus');
+        if (!el) el = document.getElementById('trErrorMsg');
         if (!el) return;
         if (_liveStatusTimeout) clearTimeout(_liveStatusTimeout);
         el.textContent = msg;
