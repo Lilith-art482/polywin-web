@@ -4501,7 +4501,7 @@
         if (_termPriceInterval) clearInterval(_termPriceInterval);
         _termPriceInterval = setInterval(function() {
             if (!_termMarket) return;
-            var marketId = _termMarket.conditionId || _termMarket.id;
+            var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
             if (!marketId) return;
             pageFetch(GAMMA_API + '/markets/' + encodeURIComponent(marketId))
                 .then(function(text) {
@@ -4538,7 +4538,7 @@
         if (!_termSelectedOutcome || !_termMarket) return;
         var obSection = document.getElementById('trObSection');
         if (obSection) obSection.style.display = '';
-        var marketId = _termMarket.conditionId || _termMarket.id;
+        var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
         var idx = _termSelectedOutcome.index;
         var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
         if (!tokenIds || !tokenIds[idx]) {
