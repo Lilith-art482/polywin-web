@@ -3050,6 +3050,127 @@
         }
     }
 
+    function _saveProfileCfg(profileIdx, cfg) {
+        try {
+            var all = JSON.parse(localStorage.getItem('polyPSetupCfg') || '{}');
+            all[profileIdx] = cfg;
+            localStorage.setItem('polyPSetupCfg', JSON.stringify(all));
+        } catch(e) {}
+    }
+
+    function _showPSetupModal() {
+        var curProfile = _getActiveProfile();
+        var cfg = _loadProfileCfg(curProfile);
+        var overlay = document.createElement('div');
+        overlay.className = 'tr-modal-overlay';
+        overlay.innerHTML = '<div class="tr-modal tr-modal-psetup">'
+            + '<div class="tr-modal-header"><span>' + (settingsT('terminal.edit_setup') || 'Настройка') + ' P' + curProfile + '</span><button class="tr-modal-close" data-action="close">\u2715</button></div>'
+            + '<div class="tr-modal-body">'
+            + '<div class="tr-ps-modal-tabs">'
+            + '<button class="tr-ps-modal-tab' + (curProfile === 1 ? ' active' : '') + '" data-ps-tab="1">P1</button>'
+            + '<button class="tr-ps-modal-tab' + (curProfile === 2 ? ' active' : '') + '" data-ps-tab="2">P2</button>'
+            + '<button class="tr-ps-modal-tab' + (curProfile === 3 ? ' active' : '') + '" data-ps-tab="3">P3</button>'
+            + '</div>'
+            + '<div class="tr-ps-modal-section">'
+            + '<div class="tr-ps-modal-sectitle"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg> Quick Buy</div>'
+            + '<div class="tr-ps-modal-grid2" id="trPsBuyGrid"></div>'
+            + '</div>'
+            + '<div class="tr-ps-modal-section">'
+            + '<div class="tr-ps-modal-sectitle"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M7 18c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg> Sell %</div>'
+            + '<div class="tr-ps-modal-inline" id="trPsSellPctGrid"></div>'
+            + '</div>'
+            + '<div class="tr-ps-modal-section">'
+            + '<div class="tr-ps-modal-sectitle"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg> Sell $</div>'
+            + '<div class="tr-ps-modal-inline" id="trPsSellUsdGrid"></div>'
+            + '</div>'
+            + '<div class="tr-ps-modal-preview">'
+            + '<div class="tr-ps-modal-sectitle"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="CurrentColor" d="M12 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm8-4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H4V4h16v12z"/></svg> Preview</div>'
+            + '<div class="tr-ps-modal-preview-btns" id="trPsPreview"></div>'
+            + '</div>'
+            + '</div>'
+            + '<div class="tr-modal-footer"><button class="tr-submit tr-ps-modal-save" data-action="save" style="width:100%;padding:8px">' + (settingsT('save') || 'Save') + '</button></div>'
+            + '</div>';
+        document.body.appendChild(overlay);
+
+        function buildPreview(c) {
+            var ph = '<div class="tr-ps-preview-label">Buy</div><div class="tr-ps-preview-row">';
+            for (var i = 0; i < Math.min(c.buy.length, 4); i++) {
+                ph += '<span class="tr-ps-preview-chip">$' + (c.buy[i] || 0) + '</span>';
+            }
+            ph += '</div><div class="tr-ps-preview-label" style="margin-top:5px">Sell</div><div class="tr-ps-preview-row">';
+            for (var i = 0; i < Math.min(c.sell.length, 3); i++) {
+                ph += '<span class="tr-ps-preview-chip tr-ps-preview-sell">' + (c.sell[i] || 0) + '%</span>';
+            }
+            ph += '</div>';
+            return ph;
+        }
+
+        function renderModalContent(profileIdx) {
+            var c = _loadProfileCfg(profileIdx);
+            var bg = '';
+            for (var bi = 0; bi < 4; bi++) {
+                var val = c.buy[bi] !== undefined ? c.buy[bi] : '';
+                bg += '<div class="tr-ps-modal-cell"><span class="tr-ps-modal-prefix">$</span><input type="number" class="tr-input tr-ps-modal-inp" data-type="buy" data-idx="' + bi + '" value="' + val + '" min="0" step="any" placeholder="0"></div>';
+            }
+            var bgEl = document.getElementById('trPsBuyGrid');
+            if (bgEl) bgEl.innerHTML = bg;
+            var sph = '';
+            for (var si = 0; si < 3; si++) {
+                var val = c.sell[si] !== undefined ? c.sell[si] : '';
+                sph += '<div class="tr-ps-modal-cell tr-ps-modal-cell-sm"><input type="number" class="tr-input tr-ps-modal-inp" data-type="sellPct" data-idx="' + si + '" value="' + val + '" min="0" max="100" step="1" placeholder="0"><span class="tr-ps-modal-suffix">%</span></div>';
+            }
+            var spEl = document.getElementById('trPsSellPctGrid');
+            if (spEl) spEl.innerHTML = sph;
+            var suh = '';
+            for (var si2 = 0; si2 < 3; si2++) {
+                var val = c.sellUsd && c.sellUsd[si2] !== undefined ? c.sellUsd[si2] : '';
+                suh += '<div class="tr-ps-modal-cell tr-ps-modal-cell-sm"><span class="tr-ps-modal-prefix">$</span><input type="number" class="tr-input tr-ps-modal-inp" data-type="sellUsd" data-idx="' + si2 + '" value="' + val + '" min="0" step="any" placeholder="0"></div>';
+            }
+            var suEl = document.getElementById('trPsSellUsdGrid');
+            if (suEl) suEl.innerHTML = suh;
+            var pvEl = document.getElementById('trPsPreview');
+            if (pvEl) pvEl.innerHTML = buildPreview(c);
+        }
+
+        renderModalContent(curProfile);
+
+        overlay.addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-action], [data-ps-tab]');
+            if (!btn) return;
+            if (btn.dataset.action === 'close') { overlay.remove(); return; }
+            if (btn.dataset.psTab) {
+                var tabIdx = parseInt(btn.dataset.psTab);
+                document.querySelectorAll('.tr-ps-modal-tab').forEach(function(t) { t.classList.remove('active'); });
+                btn.classList.add('active');
+                renderModalContent(tabIdx);
+                return;
+            }
+            if (btn.dataset.action === 'save') {
+                var activeTab = document.querySelector('.tr-ps-modal-tab.active');
+                var pIdx = activeTab ? parseInt(activeTab.dataset.psTab) : curProfile;
+                var newBuy = [], newSellPct = [], newSellUsd = [];
+                document.querySelectorAll('#trPsBuyGrid .tr-ps-modal-inp').forEach(function(inp) {
+                    var v = parseFloat(inp.value);
+                    if (!isNaN(v) && v > 0) newBuy.push(v);
+                });
+                document.querySelectorAll('#trPsSellPctGrid .tr-ps-modal-inp').forEach(function(inp) {
+                    var v = parseFloat(inp.value);
+                    if (!isNaN(v) && v > 0) newSellPct.push(v);
+                });
+                document.querySelectorAll('#trPsSellUsdGrid .tr-ps-modal-inp').forEach(function(inp) {
+                    var v = parseFloat(inp.value);
+                    if (!isNaN(v) && v > 0) newSellUsd.push(v);
+                });
+                if (!newBuy.length) newBuy = [10,25,50,100];
+                if (!newSellPct.length) newSellPct = [25,50,75];
+                if (!newSellUsd.length) newSellUsd = [50,100,200];
+                _saveProfileCfg(pIdx, {buy:newBuy, sell:newSellPct, sellUsd:newSellUsd});
+                _updateQuickButtons(_getActiveProfile());
+                overlay.remove();
+            }
+        });
+    }
+
     function _detectCryptoAsset(title) {
         var symbolMap = {
             'BTC': ['BTC', 'BITCOIN', 'БИТКОИН', 'БИТКОЙН'],
@@ -3098,6 +3219,20 @@
         iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
         iframe.setAttribute('allowfullscreen', 'true');
         iframe.src = _buildTVUrl(asset, interval);
+        var loadTimer = setTimeout(function() {
+            if (container && container.querySelector('iframe') === iframe && iframe.style.display !== 'none') {
+                iframe.style.display = 'none';
+                if (emptyEl) {
+                    emptyEl.style.display = '';
+                    emptyEl.innerHTML = 'Failed to load TradingView. Retrying...';
+                }
+                setTimeout(function() {
+                    iframe.src = _buildTVUrl(asset, interval);
+                    iframe.style.display = '';
+                }, 3000);
+            }
+        }, 15000);
+        iframe.onload = function() { clearTimeout(loadTimer); };
         container.appendChild(iframe);
     }
 
@@ -3556,7 +3691,13 @@
             + '<div class="tr-bot-rounds" id="phxRounds"><div class="tr-bot-rounds-empty">No completed rounds</div></div></div>'
             + '</div>' // end phoenix
             + '</div></div>' // end strategies tab AI
-            + '<div id="trStrategiesTabMy" style="display:none"><div class="tr-bot-empty" style="padding:40px 20px;text-align:center;font-size:11px;color:var(--text-tertiary)">Coming soon</div></div>'
+            + '<div id="trStrategiesTabMy" style="display:none">'
+            + '<div class="tr-strategies-my">'
+            + '<div id="trStrategiesList"></div>'
+            + '<div class="tr-strategies-my-acts" style="padding:8px 12px;display:flex;gap:8px;align-items:center">'
+            + '<button class="tr-submit" id="trStrategiesSaveBtn" style="flex:1;padding:6px;font-size:11px">' + (t('terminal.strategy_save') || 'Save') + '</button>'
+            + '<span id="trStrategiesStatus" style="font-size:11px;font-weight:600"></span>'
+            + '</div></div></div>'
             + '</div>'; // end strategies section
 
         // 11. STRATEGY INFO MODAL
@@ -3599,6 +3740,24 @@
             + '<button class="tr-section-close" id="trWalletsClose">&times;</button></div>'
             + '<div id="trWalletsContent"><div class="tr-loading">' + (t('events.loading') || 'Loading...') + '</div></div></div>';
 
+        // 15. ORDER BOOK
+        html += '<div class="tr-ob-section" id="trObSection" style="display:none">'
+            + '<div class="tr-ob-header">'
+            + '<span class="tr-ob-title"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> ' + (t('terminal.orderbook') || 'Order Book') + '</span>'
+            + '<button class="tr-ob-refresh" id="trObRefresh">\u21bb</button>'
+            + '</div>'
+            + '<div class="tr-ob-ud">'
+            + '<button class="tr-ob-ud-btn active" id="trObUp">UP</button>'
+            + '<button class="tr-ob-ud-btn" id="trObDown">DOWN</button>'
+            + '</div>'
+            + '<div class="tr-ob-col-headers">'
+            + '<span class="tr-ob-ch-price"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg> ' + (t('terminal.price') || 'Price') + '</span>'
+            + '<span class="tr-ob-ch-size"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M4 9h16v2H4V9zm0 4h10v2H4v-2z"/></svg> ' + (t('terminal.size') || 'Size') + '</span>'
+            + '<span class="tr-ob-ch-total"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> ' + (t('terminal.total') || 'Total') + '</span>'
+            + '</div>'
+            + '<div class="tr-ob-body" id="trObBody"><div class="tr-ob-loading">' + (t('events.loading') || 'Loading...') + '</div></div>'
+            + '</div>';
+
         html += '</div>'; // end tr-terminal
 
         sel.innerHTML = html;
@@ -3629,6 +3788,16 @@
             };
         }
         if (dirUp) dirUp.onclick();
+
+        // Order Book buttons
+        var obRefresh = document.getElementById('trObRefresh');
+        if (obRefresh) obRefresh.onclick = function() { _updateOrderBook(); };
+        var obUp = document.getElementById('trObUp');
+        var obDown = document.getElementById('trObDown');
+        if (obUp && obDown) {
+            obUp.onclick = function() { obUp.classList.add('active'); obDown.classList.remove('active'); _updateOrderBook(); };
+            obDown.onclick = function() { obDown.classList.add('active'); obUp.classList.remove('active'); _updateOrderBook(); };
+        }
 
         // Quick buy buttons
         sel.querySelectorAll('.tr-qb-btn').forEach(function(btn) {
@@ -3753,7 +3922,7 @@
             };
         });
         var pSetupEdit = document.getElementById('trPSetupEdit');
-        if (pSetupEdit) pSetupEdit.onclick = function() { /* psetup modal placeholder */ };
+        if (pSetupEdit) pSetupEdit.onclick = function() { _showPSetupModal(); };
 
         // Mode switching
         sel.querySelectorAll('.tr-mode-btn').forEach(function(btn) {
@@ -3788,6 +3957,7 @@
                 if (favSection) favSection.style.display = 'none';
                 if (whaleSection) whaleSection.style.display = 'none';
                 if (walletsSection) walletsSection.style.display = 'none';
+                if (_termState === 'strategies') { _botRender(); _phoenixRender(); }
                 if (!_isTrade) _liveStopCheck();
                 if (_termState === 'live') _liveCheckCurrentWallet();
             };
@@ -3859,9 +4029,17 @@
                 if (container && emptyEl) {
                     var src = btn.dataset.src;
                     if (src === 'cl') {
-                        container.style.display = 'none';
-                        emptyEl.style.display = '';
-                        emptyEl.textContent = 'Chainlink: ' + (t('terminal.chart_empty') || 'No data');
+                        container.style.display = '';
+                        emptyEl.style.display = 'none';
+                        var titleEl = document.querySelector('.tr-event-title');
+                        var title = titleEl ? titleEl.textContent : '';
+                        var asset = _detectCryptoAsset(title);
+                        if (asset) {
+                            _loadChainlinkChart('trChartContainer', 'BINANCE:' + asset + 'USDT', '5');
+                        } else {
+                            emptyEl.style.display = '';
+                            emptyEl.textContent = 'Chainlink: ' + (t('terminal.chart_empty') || 'No data');
+                        }
                     } else {
                         var titleEl = document.querySelector('.tr-event-title');
                         var title = titleEl ? titleEl.textContent : '';
@@ -3904,6 +4082,8 @@
                 var myTab = document.getElementById('trStrategiesTabMy');
                 if (aiTab) aiTab.style.display = tName === 'ai' ? '' : 'none';
                 if (myTab) myTab.style.display = tName === 'my' ? '' : 'none';
+                if (tName === 'my') _renderStrategies();
+                else if (tName === 'ai') { _botRender(); _phoenixRender(); }
             };
         });
 
@@ -3922,6 +4102,8 @@
                 if (clobContent) clobContent.style.display = _tradeStrategy === 'clob' ? '' : 'none';
                 if (deltaContent) deltaContent.style.display = _tradeStrategy === 'delta' ? '' : 'none';
                 if (phoenixContent) phoenixContent.style.display = _tradeStrategy === 'phoenix' ? '' : 'none';
+                if (_tradeStrategy === 'clob') _botRender();
+                else if (_tradeStrategy === 'phoenix') _phoenixRender();
             };
         });
 
@@ -3934,8 +4116,9 @@
                 var title = document.getElementById('trStrategyModalTitle');
                 var desc = document.getElementById('trStrategyModalDesc');
                 if (!modal || !title || !desc) return;
-                var names = { clob: 'CLOB Arbitrage', delta: 'Delta Mesh', phoenix: 'Phoenix' };
-                title.textContent = names[strategy] || 'CLOB Arbitrage';
+                var info = STRATEGY_DESCS[strategy] || STRATEGY_DESCS.clob;
+                title.textContent = info.title;
+                desc.textContent = info.desc;
                 modal.style.display = 'flex';
             };
         });
@@ -3944,14 +4127,7 @@
         var stratModal = document.getElementById('trStrategyModal');
         if (stratModal) stratModal.onclick = function(e) { if (e.target === stratModal) stratModal.style.display = 'none'; };
 
-        // Bot start/stop button
-        var dbBtn = document.getElementById('trBotStartBtn');
-        if (dbBtn) {
-            dbBtn.onclick = function() {
-                dbBtn.textContent = dbBtn.textContent === '\u25b6' ? '\u23f9' : '\u25b6';
-            };
-        }
-
+        // Bot start/stop — handled by _botRender
         // Mode balance click — open balance modal
         var modeBal = document.getElementById('trModeBalance');
         if (modeBal) {
@@ -4360,6 +4536,8 @@
 
     function _updateOrderBook() {
         if (!_termSelectedOutcome || !_termMarket) return;
+        var obSection = document.getElementById('trObSection');
+        if (obSection) obSection.style.display = '';
         var marketId = _termMarket.conditionId || _termMarket.id;
         var idx = _termSelectedOutcome.index;
         var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
@@ -4410,40 +4588,6 @@
 
     function _renderOB(book) {
         if (!book) return;
-        var sel = $('ttSelectedMarket');
-        if (!sel) return;
-        var obSection = sel.querySelector('.tr-ob-section');
-        if (!obSection) {
-            var term = sel.querySelector('.tr-terminal');
-            if (!term) return;
-            var obDiv = document.createElement('div');
-            obDiv.className = 'tr-ob-section';
-            obDiv.innerHTML = '<div class="tr-ob-header">'
-                + '<span class="tr-ob-title"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> Order Book</span>'
-                + '<button class="tr-ob-refresh" id="trObRefresh">\u21bb</button>'
-                + '</div>'
-                + '<div class="tr-ob-ud">'
-                + '<button class="tr-ob-ud-btn active" id="trObUp">UP</button>'
-                + '<button class="tr-ob-ud-btn" id="trObDown">DOWN</button>'
-                + '</div>'
-                + '<div class="tr-ob-col-headers">'
-                + '<span class="tr-ob-ch-price"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg> Price</span>'
-                + '<span class="tr-ob-ch-size"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M4 9h16v2H4V9zm0 4h10v2H4v-2z"/></svg> Size</span>'
-                + '<span class="tr-ob-ch-total"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> Total</span>'
-                + '</div>'
-                + '<div class="tr-ob-body" id="trObBody"></div>';
-            term.after(obDiv);
-            var refreshBtn = document.getElementById('trObRefresh');
-            if (refreshBtn) refreshBtn.onclick = function() { _updateOrderBook(); };
-            // UP/DOWN toggle
-            var obUp = document.getElementById('trObUp');
-            var obDown = document.getElementById('trObDown');
-            if (obUp && obDown) {
-                obUp.onclick = function() { obUp.classList.add('active'); obDown.classList.remove('active'); _updateOrderBook(); };
-                obDown.onclick = function() { obDown.classList.add('active'); obUp.classList.remove('active'); _updateOrderBook(); };
-            }
-        }
-
         var body = document.getElementById('trObBody');
         if (!body) return;
 
@@ -4501,9 +4645,648 @@
         body.innerHTML = html;
     }
 
+    // ====================== STRATEGIES STATE ======================
+    var _demoBot = null;
+    var _clobPositions = {};
+    var _clobOpenOrders = [];
+    var _clobStats = { trades: 0, wins: 0, losses: 0, totalPnl: 0, totalFees: 0, totalRebate: 0, startTime: 0 };
+    var _clobConditionTokens = {};
+    var _clobPrices = {};
+    var _clobConditionSymbol = {};
+    var _clobWsReconnectDelay = 1000;
+    var _clobDiscoveredConditions = {};
+    var _clobLastDiscoveryTime = 0;
+    var _botTimerInterval = null;
+    var _autoStartPending = false;
+    var _phoenixBot = null;
+
+    function maxPosFromStorage() {
+        try { var v = parseFloat(localStorage.getItem('polyBotMaxPosition')); return v > 0 ? v : 200; } catch(e) { return 200; }
+    }
+
+    function _demoBotDefault() {
+        var _sb = parseFloat(localStorage.getItem('polyBotStartBalance'));
+        var startBal = _sb && _sb > 0 ? _sb : 100000;
+        return {
+            running: false, balance: startBal, startBalance: startBal,
+            totalPnl: 0, totalTrades: 0, wins: 0, losses: 0,
+            positions: {}, tracked: {}, logs: [], history: [], rounds: [], roundCounter: 0,
+            intervalId: null, renderIntervalId: null, startTime: null,
+            pollMs: 1000, maxPosition: Math.min(startBal, maxPosFromStorage()), _lastTickTime: 0, _priceCache: {}, _symCounters: {}, profitTarget: 0
+        };
+    }
+
+    var BOT_STATE_KEY = 'polyBotState';
+    var _lastStateSave = 0;
+    function _botSaveState(force) {
+        try {
+            var now = Date.now();
+            if (!force && now - _lastStateSave < 10000) return;
+            _lastStateSave = now;
+            var b = _demoBot;
+            if (!b) return;
+            if (!b.running && !force) return;
+            var state = {
+                running: b.running, balance: b.balance, startBalance: b.startBalance,
+                totalPnl: b.totalPnl, totalTrades: b.totalTrades,
+                wins: b.wins, losses: b.losses, roundCounter: b.roundCounter, _symCounters: b._symCounters,
+                positions: b.positions, tracked: b.tracked, rounds: b.rounds,
+                maxPosition: b.maxPosition, pollMs: b.pollMs,
+                profitTarget: b.profitTarget || 0,
+                clobPositions: _clobPositions, clobOpenOrders: _clobOpenOrders, clobStats: _clobStats,
+                savedAt: Date.now()
+            };
+            localStorage.setItem(BOT_STATE_KEY, JSON.stringify(state));
+        } catch(e) {}
+    }
+    function _botLoadState() {
+        try {
+            var raw = localStorage.getItem(BOT_STATE_KEY);
+            if (!raw) return null;
+            var state = JSON.parse(raw);
+            if (!state || Date.now() - state.savedAt > 86400000) {
+                localStorage.removeItem(BOT_STATE_KEY);
+                return null;
+            }
+            return state;
+        } catch(e) { return null; }
+    }
+
+    function _getBot() {
+        if (!_demoBot) {
+            var saved = _botLoadState();
+            if (saved) {
+                _demoBot = _demoBotDefault();
+                _demoBot.balance = saved.balance;
+                _demoBot.startBalance = saved.startBalance;
+                _demoBot.totalPnl = saved.totalPnl || 0;
+                _demoBot.totalTrades = saved.totalTrades || 0;
+                _demoBot.wins = saved.wins || 0;
+                _demoBot.losses = saved.losses || 0;
+                _demoBot.roundCounter = saved.roundCounter || 0;
+                _demoBot._symCounters = saved._symCounters || {};
+                _demoBot.positions = saved.positions || {};
+                _demoBot.tracked = saved.tracked || {};
+                _demoBot.rounds = saved.rounds || [];
+                _demoBot.maxPosition = Math.min(_demoBot.balance, saved.maxPosition || 200);
+                _demoBot.profitTarget = saved.profitTarget || 0;
+                if (saved.clobPositions) _clobPositions = saved.clobPositions;
+                if (saved.clobOpenOrders) _clobOpenOrders = Array.isArray(saved.clobOpenOrders) ? saved.clobOpenOrders : [];
+                if (saved.clobStats) _clobStats = saved.clobStats;
+                if (saved.running) _autoStartPending = true;
+            } else {
+                _demoBot = _demoBotDefault();
+            }
+        }
+        return _demoBot;
+    }
+
+    function _saveBotSelectedAssets(assets) {
+        localStorage.setItem('polyBotAssets', JSON.stringify(assets));
+    }
+
+    function _phoenixDefault() {
+        return {
+            running: false, balance: 1000, startBalance: 1000,
+            entryCents: 2, targetCents: 20,
+            budgetMode: 'pct', budgetPct: 5, budgetFixed: 15,
+            stopEnabled: false, stopPct: 30,
+            positions: {}, rounds: [], roundCounter: 0,
+            intervalId: null, startTime: null
+        };
+    }
+    function _phoenixGetBot() {
+        if (!_phoenixBot) {
+            try {
+                var d = JSON.parse(localStorage.getItem('polyPhoenixState'));
+                if (d) { _phoenixBot = d; return _phoenixBot; }
+            } catch(e) {}
+            _phoenixBot = _phoenixDefault();
+        }
+        return _phoenixBot;
+    }
+    function _phoenixSaveState() {
+        if (_phoenixBot) localStorage.setItem('polyPhoenixState', JSON.stringify(_phoenixBot));
+    }
+
+    function _botLog(type, msg) {
+        var b = _getBot();
+        b.history = b.history || [];
+        b.history.push({ type: type, msg: msg, t: Date.now() });
+        if (b.history.length > 500) b.history.splice(0, b.history.length - 500);
+    }
+
+    function _botSaveRound(r) {
+        try {
+            var rounds = JSON.parse(localStorage.getItem('polyBotRounds') || '[]');
+            rounds.push(r);
+            if (rounds.length > 100) rounds = rounds.slice(-100);
+            localStorage.setItem('polyBotRounds', JSON.stringify(rounds));
+        } catch(e) {}
+    }
+    function _botLoadRoundsFromStorage() {
+        try {
+            var rounds = JSON.parse(localStorage.getItem('polyBotRounds') || '[]');
+            var b = _getBot();
+            b.rounds = rounds;
+            if (rounds.length > 0) b.roundCounter = rounds[rounds.length - 1].num || 0;
+        } catch(e) {}
+    }
+
+    function _clobDisconnectWs() {}
+    function _clobTick() {}
+
+    function _demoBotStart() {
+        var b = _getBot();
+        if (b.running) return;
+        var def = _demoBotDefault();
+        for (var k in def) {
+            if (k !== 'intervalId' && k !== 'startTime' && k !== 'running') {
+                if (k === 'positions' || k === 'tracked' || k === 'rounds' || k === 'logs' || k === 'history') {
+                    if (b[k] && typeof b[k] === 'object' && Object.keys(b[k]).length > 0) continue;
+                }
+                if (k === 'balance' && b.balance > 0 && b.balance !== 100000) continue;
+                if (k === 'startBalance' && b.startBalance > 0) continue;
+                b[k] = def[k];
+            }
+        }
+        b.running = true; b.startTime = Date.now();
+        if (Object.keys(_clobPositions).length === 0 && _clobOpenOrders.length === 0) {
+            _clobStats = { trades: 0, wins: 0, losses: 0, totalPnl: 0, totalFees: 0, totalRebate: 0, startTime: Date.now() };
+            _clobOpenOrders = [];
+            _clobPositions = {};
+        }
+        _clobWsReconnectDelay = 1000;
+        _botLoadRoundsFromStorage();
+        _botLog('info', 'CLOB Market Making started. Balance: $' + b.balance.toFixed(0));
+        _clobTick();
+        b.intervalId = setInterval(_clobTick, 1000);
+        b.renderIntervalId = setInterval(_botRender, 1000);
+        _botRender();
+        _botSaveState(true);
+    }
+
+    function _demoBotStop() {
+        var b = _getBot();
+        b.running = false;
+        var closedSymCount = {};
+        var _stopEntryBal = b.balance;
+        for (var pk in _clobPositions) {
+            var pos = _clobPositions[pk];
+            if (pos && pos.size > 0) {
+                var closePrice = pos.entryPrice;
+                if (pos.tokenSide) {
+                    var tp = _clobPrices[pk];
+                    if (tp && tp.bid != null) closePrice = tp.bid;
+                }
+                var buyCost = pos.entryPrice * pos.size;
+                var sellValue = closePrice * pos.size;
+                var grossPnl = sellValue - buyCost;
+                b.balance += sellValue;
+                b.totalPnl += grossPnl;
+                b.totalTrades++;
+                if (grossPnl >= 0) b.wins++; else b.losses++;
+                _clobStats.trades++;
+                if (grossPnl >= 0) _clobStats.wins++; else _clobStats.losses++;
+                _clobStats.totalPnl += grossPnl;
+                var sym = pos.sym || '?';
+                var symKey = sym + '_' + pk;
+                if (!closedSymCount[symKey]) closedSymCount[symKey] = { pnl: 0, sym: sym, entrySum: 0, closeSum: 0, count: 0 };
+                closedSymCount[symKey].pnl += grossPnl;
+                closedSymCount[symKey].entrySum += pos.entryPrice;
+                closedSymCount[symKey].closeSum += closePrice;
+                closedSymCount[symKey].count++;
+                _botLog('info', 'Position force-closed on stop: ' + (pos.tokenSide || '?') + ' ' + (pos.cid || '').substring(0, 8) + ' ' + pos.size + ' @ $' + closePrice.toFixed(3) + ', PnL $' + grossPnl.toFixed(2));
+            }
+            delete _clobPositions[pk];
+        }
+        for (var sk in closedSymCount) {
+            var sc = closedSymCount[sk];
+            var avgEntry = sc.count > 0 ? sc.entrySum / sc.count : 0;
+            var avgClose = sc.count > 0 ? sc.closeSum / sc.count : 0;
+            var _r = { num: ++b.roundCounter, endTime: Date.now(), pnl: sc.pnl, sym: sc.sym, startPrice: avgEntry, endPrice: avgClose, entryBal: _stopEntryBal };
+            b.rounds.push(_r);
+            _botSaveRound(_r);
+        }
+        _clobDisconnectWs();
+        _clobDiscoveredConditions = {};
+        _clobLastDiscoveryTime = 0;
+        _botSaveState(true);
+        if (b.intervalId) { clearInterval(b.intervalId); b.intervalId = null; }
+        if (b.renderIntervalId) { clearInterval(b.renderIntervalId); b.renderIntervalId = null; }
+        _botLog('info', 'CLOB Market Making stopped. Final balance: $' + b.balance.toFixed(2));
+        _botRender();
+    }
+
+    function _botRender() {
+        var b = _getBot();
+        var balInp = document.getElementById('trBotBalInput');
+        var btn = document.getElementById('trBotStartBtn');
+        var pos = document.getElementById('trBotPositions');
+        var posCntEl = document.getElementById('trBotPosCount');
+        if (posCntEl) posCntEl.textContent = String(Object.keys(_clobPositions).length);
+        if (balInp) {
+            balInp.value = b.balance.toFixed(2);
+            balInp.oninput = function() { var v2 = parseFloat(this.value); if (v2 > 0 && !b.running) { b.balance = v2; b.startBalance = v2; localStorage.setItem('polyBotStartBalance', String(v2)); b.maxPosition = Math.min(v2, maxPosFromStorage()); } };
+        }
+        var minSpreadInp = document.getElementById('trClobMinSpread');
+        if (minSpreadInp) {
+            minSpreadInp.value = localStorage.getItem('polyClobMinSpread') || 2;
+            minSpreadInp.oninput = function() { localStorage.setItem('polyClobMinSpread', this.value); };
+        }
+        var rebateInp = document.getElementById('trClobRebate');
+        if (rebateInp) {
+            rebateInp.value = localStorage.getItem('polyClobRebate') || 20;
+            rebateInp.oninput = function() { localStorage.setItem('polyClobRebate', this.value); };
+        }
+        var orderSizeInp = document.getElementById('trClobOrderSize');
+        if (orderSizeInp) {
+            orderSizeInp.value = localStorage.getItem('polyClobOrderSize') || 100;
+            orderSizeInp.oninput = function() { localStorage.setItem('polyClobOrderSize', this.value); };
+        }
+        var timeoutInp = document.getElementById('trClobTimeout');
+        if (timeoutInp) {
+            timeoutInp.value = localStorage.getItem('polyClobTimeout') || 3;
+            timeoutInp.oninput = function() { localStorage.setItem('polyClobTimeout', this.value); };
+        }
+        var gasCostInp = document.getElementById('trClobGasCost');
+        if (gasCostInp) {
+            gasCostInp.value = localStorage.getItem('polyClobGasCost') || 0.02;
+            gasCostInp.oninput = function() { localStorage.setItem('polyClobGasCost', this.value); };
+        }
+        if (balInp) { balInp.value = b.balance.toFixed(2); balInp.disabled = b.running; }
+        var statsEl = document.getElementById('trBotStats');
+        if (statsEl) {
+            var _trades = _clobStats.trades;
+            var _wins = _clobStats.wins;
+            var _losses = _clobStats.losses;
+            var _totalPnL = _clobStats.totalPnl;
+            var _rebate = _clobStats.totalRebate;
+            var _wr = (_wins + _losses) > 0 ? (_wins / (_wins + _losses) * 100).toFixed(0) : '-';
+            var _wrDisplay = (_wins + _losses) > 0 ? _wr + '%' : '\u2014';
+            var _pnlDisplay = _totalPnL === 0 ? '$0' : (_totalPnL > 0 ? '+' : '') + '$' + _totalPnL.toFixed(2);
+            var _rebateDisplay = _rebate === 0 ? '$0' : '$' + _rebate.toFixed(2);
+            var _pnlClass = _totalPnL > 0 ? ' tr-agent-p' : _totalPnL < 0 ? ' tr-agent-n' : '';
+            statsEl.innerHTML = '<div class="tr-agent-stat" data-s="tr"><div class="tr-agent-stat-label">' + (settingsT('terminal.strategy_trades') || 'Trades') + '</div><div class="tr-agent-stat-num">' + _trades + '</div></div>'
+                + '<div class="tr-agent-stat" data-s="wr"><div class="tr-agent-stat-label">' + (settingsT('terminal.strategy_wr') || 'Win Rate') + '</div><div class="tr-agent-stat-num">' + _wrDisplay + '</div></div>'
+                + '<div class="tr-agent-stat" data-s="pnl"><div class="tr-agent-stat-label">PnL</div><div class="tr-agent-stat-num' + _pnlClass + '">' + _pnlDisplay + '</div></div>'
+                + '<div class="tr-agent-stat" data-s="reb"><div class="tr-agent-stat-label">' + (settingsT('terminal.strategy_rebate') || 'Rebate') + '</div><div class="tr-agent-stat-num tr-agent-p">' + _rebateDisplay + '</div></div>';
+        }
+        var clearBtn = document.getElementById('trBotRoundsClear');
+        if (clearBtn) clearBtn.style.display = b.rounds.length > 0 ? '' : 'none';
+        _botRenderRounds();
+        if (btn) {
+            btn.textContent = b.running ? '\u23f9' : '\u25b6';
+            btn.className = 'tr-bot-start-btn' + (b.running ? ' running' : '');
+            btn.onclick = b.running ? _demoBotStop : _demoBotStart;
+        }
+        if (pos) {
+            var clobKeys = Object.keys(_clobPositions);
+            if (clobKeys.length === 0) {
+                pos.innerHTML = '<div class="tr-bot-empty">' + (settingsT('terminal.no_positions') || 'No open positions') + '</div>';
+            } else {
+                var h = '';
+                for (var pk in _clobPositions) {
+                    var pp = _clobPositions[pk];
+                    if (!pp || pp.size <= 0) continue;
+                    var curPrice = pp.entryPrice;
+                    var tp = _clobPrices[pk];
+                    if (tp && tp.bid != null) curPrice = tp.bid;
+                    var val = curPrice * pp.size;
+                    var cost = pp.entryPrice * pp.size;
+                    var unrealized = val - cost;
+                    var sym = pp.sym || '?';
+                    var pnlCls = unrealized >= 0 ? 'tr-bot-pos-green' : 'tr-bot-pos-red';
+                    var pnlStr = (unrealized >= 0 ? '+' : '') + '$' + unrealized.toFixed(2);
+                    var cpy = encodeURIComponent(sym + ' ' + (pp.tokenSide || '') + '\nSize: ' + pp.size.toFixed(1) + '\nEntry: $' + pp.entryPrice.toFixed(3) + '\nCur: $' + curPrice.toFixed(3) + '\nUnrealized PnL: ' + pnlStr);
+                    h += '<div class="tr-bot-pos"><div class="tr-bot-pos-accent"></div><div class="tr-bot-pos-body">'
+                        + '<div class="tr-bot-pos-hdr"><span class="tr-bot-pos-title">' + sym + ' ' + (pp.tokenSide || '') + '</span><div class="tr-bot-pos-hdr-r"><button class="tr-bot-pos-copy" data-pos="' + cpy + '" title="Copy">\u2398</button></div></div>'
+                        + '<div class="tr-bot-pos-tbl">'
+                        + '<div class="tr-bot-pos-tr"><span class="tr-bot-pos-td">' + (settingsT('terminal.strategy_size') || 'Size') + '</span><span class="tr-bot-pos-td-shr">' + pp.size.toFixed(1) + '</span></div>'
+                        + '<div class="tr-bot-pos-tr"><span class="tr-bot-pos-td">' + (settingsT('terminal.entry_price') || 'Entry') + '</span><span class="tr-bot-pos-td-shr">$' + pp.entryPrice.toFixed(3) + '</span></div>'
+                        + '<div class="tr-bot-pos-tr"><span class="tr-bot-pos-td">' + (settingsT('terminal.strategy_cur') || 'Cur') + '</span><span class="tr-bot-pos-td-shr">$' + curPrice.toFixed(3) + '</span></div>'
+                        + '</div>'
+                        + '<div class="tr-bot-pos-cur ' + pnlCls + '">' + pnlStr + '</div>'
+                        + '</div></div>';
+                }
+                if (h === '') pos.innerHTML = '<div class="tr-bot-empty">' + (settingsT('terminal.no_positions') || 'No open positions') + '</div>';
+                else pos.innerHTML = h;
+            }
+        }
+    }
+
+    function _botRenderRounds() {
+        var el = document.getElementById('trBotRounds');
+        if (!el) return;
+        var b = _getBot();
+        var rounds = b.rounds;
+        var _c = document.getElementById('trBotRoundsClear');
+        if (_c) _c.style.display = rounds.length > 0 ? '' : 'none';
+        var _copy = document.getElementById('trBotRoundsCopy');
+        if (_copy) _copy.style.display = rounds.length > 0 ? '' : 'none';
+        if (rounds.length === 0) { el.innerHTML = '<div class="tr-bot-rounds-empty">' + (settingsT('terminal.no_rounds') || 'No completed rounds') + '</div>'; return; }
+        var total = 0;
+        for (var ri = 0; ri < rounds.length; ri++) total += rounds[ri].pnl;
+        var html = '<div class="tr-bot-rounds-tbl"><div class="tr-bot-rounds-tr tr-bot-rounds-th"><span></span><span>#</span><span>' + (settingsT('terminal.strategy_time') || 'Time') + '</span><span>' + (settingsT('terminal.strategy_sym') || 'Sym') + '</span><span class="tr-bot-rounds-pnl">PnL</span></div>';
+        var start = Math.max(0, rounds.length - 30);
+        for (var i = start; i < rounds.length; i++) {
+            var r = rounds[i];
+            var ts = new Date(r.endTime).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+            var ps = (r.pnl >= 0 ? '+' : '') + '$' + r.pnl.toFixed(2);
+            var pc = r.pnl >= 0 ? 'tr-bot-rounds-grn' : 'tr-bot-rounds-red';
+            var _tt = r.entryBal ? 'Entry Bal: $' + r.entryBal.toFixed(2) + ' | Prices: ' + (r.startPrice != null ? r.startPrice.toFixed(4) : '\u2014') + '/' + (r.endPrice != null ? r.endPrice.toFixed(4) : '\u2014') : '';
+            html += '<div class="tr-bot-rounds-tr" data-rnum="' + r.num + '" title="' + _tt + '"><button class="tr-bot-rounds-del" title="Delete">\u2715</button><span>' + r.num + '</span><span>' + ts + '</span><span>' + (r.sym || '') + '</span><span class="tr-bot-rounds-pnl ' + pc + '">' + ps + '</span></div>';
+        }
+        var ts2 = (total >= 0 ? '+' : '') + '$' + total.toFixed(2);
+        var tc2 = total >= 0 ? 'tr-bot-rounds-grn' : 'tr-bot-rounds-red';
+        html += '<div class="tr-bot-rounds-tr tr-bot-rounds-total"><span></span><span></span><span></span><span>' + (settingsT('terminal.strategy_total') || 'Total') + '</span><span class="tr-bot-rounds-pnl ' + tc2 + '">' + ts2 + '</span></div></div>';
+        el.innerHTML = html;
+    }
+
+    function _botGetHistFilter() {
+        try { return document.querySelector('#trBotHistFilters .tr-bot-hist-filter.active')?.dataset?.filter || 'all'; } catch(e) { return 'all'; }
+    }
+
+    function _botRenderHistory() {
+        var el = document.getElementById('trBotLog');
+        if (!el) return;
+        var b = _getBot();
+        var filter = _botGetHistFilter();
+        var hist = b.history || [];
+        var html = '';
+        var count = 0;
+        for (var i = hist.length - 1; i >= 0; i--) {
+            var h = hist[i];
+            if (filter !== 'all' && h.sym !== filter) continue;
+            if (count++ >= 50) break;
+            var ts = new Date(h.t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+            var sym = h.sym || '';
+            var typeLabel = '', typeCls = '', detail = '', amtStr = '', pnlStr = '', balStr = '';
+            if (h.type === 'entry') {
+                typeLabel = 'Entry'; typeCls = 'tr-bot-h-entry';
+                detail = (h.upCt || '?') + 'Up $' + (h.upAmt || 0).toFixed(0) + ' / ' + (h.dnCt || '?') + 'Dn $' + (h.dnAmt || 0).toFixed(0);
+                amtStr = '$' + (h.totalAmt || 0).toFixed(0);
+                balStr = '$' + (h.balAfter || 0).toFixed(0);
+            } else if (h.type === 'accum') {
+                typeLabel = 'Accum'; typeCls = 'tr-bot-h-accum';
+                var parts = [];
+                if (h.upAdd) parts.push('+' + h.upAdd + 'Up');
+                if (h.dnAdd) parts.push('+' + h.dnAdd + 'Dn');
+                detail = parts.join(' ') + ' $' + (h.totalCost || 0).toFixed(0);
+                amtStr = '$' + (h.totalCost || 0).toFixed(0);
+                balStr = '$' + (h.balAfter || 0).toFixed(0);
+            } else if (h.type === 'result') {
+                typeLabel = 'Result'; typeCls = 'tr-bot-h-result';
+                detail = h.outcome || '';
+                var pnl = h.pnl || 0; pnlStr = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+                amtStr = '$' + (h.payout || 0).toFixed(0);
+                balStr = '$' + (h.balAfter || 0).toFixed(0);
+            } else if (h.type === 'info') {
+                typeLabel = 'Info'; typeCls = 'tr-bot-h-info';
+                detail = h.msg || '';
+            } else continue;
+            html += '<div class="tr-bot-h-tr" data-hidx="' + i + '">'
+                + '<span class="tr-bot-h-time">' + ts + '</span>'
+                + '<span class="tr-bot-h-sym">' + sym + '</span>'
+                + '<span class="tr-bot-h-type ' + typeCls + '">' + typeLabel + '</span>'
+                + '<span class="tr-bot-h-detail">' + detail + '</span>'
+                + '<span class="tr-bot-h-amt">' + amtStr + '</span>'
+                + '<span class="tr-bot-h-pnl' + (pnlStr && pnlStr[0] === '+' ? ' tr-bot-h-green' : pnlStr && pnlStr[0] === '-' ? ' tr-bot-h-red' : '') + '">' + pnlStr + '</span>'
+                + '<span class="tr-bot-h-bal">' + balStr + '</span>'
+                + '<button class="tr-bot-h-del" title="Delete">\u2715</button>'
+                + '</div>';
+        }
+        if (!html) html = '<div class="tr-bot-empty">' + (settingsT('terminal.no_operations') || 'No operations') + (filter !== 'all' ? ' for ' + filter : '') + '</div>';
+        else html = '<div class="tr-bot-h-table"><div class="tr-bot-h-tr tr-bot-h-th"><span>' + (settingsT('terminal.strategy_time') || 'Time') + '</span><span>' + (settingsT('terminal.strategy_asset') || 'Asset') + '</span><span>' + (settingsT('terminal.strategy_type') || 'Type') + '</span><span>' + (settingsT('terminal.strategy_detail') || 'Detail') + '</span><span>' + (settingsT('terminal.strategy_amount') || 'Amount') + '</span><span>PnL</span><span>' + (settingsT('terminal.strategy_balance') || 'Balance') + '</span><span></span></div>' + html + '</div>';
+        el.innerHTML = html;
+    }
+
+    function _phoenixRender() {
+        var b = _phoenixGetBot();
+        var balInp = document.getElementById('phxBalInput');
+        var entryInp = document.getElementById('phxEntryCents');
+        var targetInp = document.getElementById('phxTargetCents');
+
+        if (balInp) {
+            if (document.activeElement !== balInp) balInp.value = b.balance.toFixed(2);
+            balInp.readOnly = b.running;
+            balInp.style.opacity = b.running ? '0.5' : '';
+            balInp.oninput = function() {
+                if (b.running) return;
+                var v = parseFloat(this.value);
+                if (v > 0) { b.balance = v; b.startBalance = v; }
+            };
+            balInp.onchange = function() {
+                if (b.running) return;
+                var v = parseFloat(this.value);
+                if (v > 0) { b.balance = v; b.startBalance = v; _phoenixSaveState(); }
+            };
+        }
+        if (entryInp) {
+            if (document.activeElement !== entryInp) entryInp.value = b.entryCents;
+            entryInp.readOnly = b.running;
+            entryInp.style.opacity = b.running ? '0.5' : '';
+            entryInp.oninput = function() {
+                if (b.running) return;
+                var v = parseInt(this.value) || 2;
+                b.entryCents = Math.max(1, Math.min(50, v));
+            };
+            entryInp.onchange = function() {
+                if (b.running) return;
+                var v = parseInt(this.value) || 2;
+                b.entryCents = Math.max(1, Math.min(50, v)); _phoenixSaveState();
+            };
+        }
+        if (targetInp) {
+            if (document.activeElement !== targetInp) targetInp.value = b.targetCents;
+            targetInp.readOnly = b.running;
+            targetInp.style.opacity = b.running ? '0.5' : '';
+            targetInp.oninput = function() {
+                if (b.running) return;
+                var v = parseInt(this.value) || 20;
+                b.targetCents = Math.max(5, Math.min(50, v));
+            };
+            targetInp.onchange = function() {
+                if (b.running) return;
+                var v = parseInt(this.value) || 20;
+                b.targetCents = Math.max(5, Math.min(50, v)); _phoenixSaveState();
+            };
+        }
+
+        var budgetMode = document.getElementById('phxBudgetMode');
+        var budgetPct = document.getElementById('phxBudgetPct');
+        var budgetFixed = document.getElementById('phxBudgetFixed');
+        var budgetPctWrap = document.getElementById('phxBudgetPctWrap');
+        var budgetFixedWrap = document.getElementById('phxBudgetFixedWrap');
+        if (budgetMode) {
+            if (document.activeElement !== budgetMode) budgetMode.value = b.budgetMode || 'pct';
+            budgetMode.disabled = b.running;
+            budgetMode.style.opacity = b.running ? '0.5' : '';
+            budgetMode.onchange = function() {
+                if (b.running) return;
+                b.budgetMode = this.value;
+                if (budgetPctWrap) budgetPctWrap.style.display = this.value === 'pct' ? 'flex' : 'none';
+                if (budgetFixedWrap) budgetFixedWrap.style.display = this.value === 'fixed' ? 'flex' : 'none';
+                _phoenixSaveState();
+            };
+            if (budgetPct) {
+                if (document.activeElement !== budgetPct) budgetPct.value = b.budgetPct || 5;
+                budgetPct.readOnly = b.running;
+                budgetPct.style.opacity = b.running ? '0.5' : '';
+                budgetPct.oninput = function() { if (!b.running) b.budgetPct = parseFloat(this.value) || 5; };
+                budgetPct.onchange = function() { if (!b.running) _phoenixSaveState(); };
+            }
+            if (budgetFixed) {
+                if (document.activeElement !== budgetFixed) budgetFixed.value = b.budgetFixed || 15;
+                budgetFixed.readOnly = b.running;
+                budgetFixed.style.opacity = b.running ? '0.5' : '';
+                budgetFixed.oninput = function() { if (!b.running) b.budgetFixed = parseFloat(this.value) || 15; };
+                budgetFixed.onchange = function() { if (!b.running) _phoenixSaveState(); };
+            }
+            if (budgetPctWrap) budgetPctWrap.style.display = (b.budgetMode || 'pct') === 'pct' ? 'flex' : 'none';
+            if (budgetFixedWrap) budgetFixedWrap.style.display = (b.budgetMode || 'pct') === 'fixed' ? 'flex' : 'none';
+        }
+
+        var statsEl = document.getElementById('phxStats');
+        if (statsEl) {
+            var rounds = b.rounds || [];
+            var wins = rounds.filter(function(r) { return r.pnl >= 0; }).length;
+            var losses = rounds.filter(function(r) { return r.pnl < 0; }).length;
+            var totalPnl = rounds.reduce(function(s, r) { return s + (r.pnl || 0); }, 0);
+            var avgPnl = rounds.length > 0 ? (totalPnl / rounds.length) : 0;
+            var wr = (wins + losses) > 0 ? (wins / (wins + losses) * 100).toFixed(0) : '-';
+            var pnlDisplay = totalPnl === 0 ? '$0' : (totalPnl > 0 ? '+' : '') + '$' + totalPnl.toFixed(0);
+            var avgDisplay = avgPnl === 0 ? '$0' : (avgPnl > 0 ? '+' : '') + '$' + avgPnl.toFixed(1);
+            var pnlClass = totalPnl > 0 ? ' tr-agent-p' : totalPnl < 0 ? ' tr-agent-n' : '';
+            statsEl.innerHTML =
+                '<div class="tr-agent-stat"><div class="tr-agent-stat-label">' + (settingsT('terminal.strategy_rounds') || 'Rounds') + '</div><div class="tr-agent-stat-num">' + rounds.length + '</div></div>'
+                + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">' + (settingsT('terminal.strategy_wr') || 'Win Rate') + '</div><div class="tr-agent-stat-num">' + (wr !== '-' ? wr + '%' : '\u2014') + '</div></div>'
+                + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">PnL</div><div class="tr-agent-stat-num' + pnlClass + '">' + pnlDisplay + '</div></div>'
+                + '<div class="tr-agent-stat"><div class="tr-agent-stat-label">' + (settingsT('terminal.strategy_avg') || 'Avg') + '</div><div class="tr-agent-stat-num' + (avgPnl > 0 ? ' tr-agent-p' : avgPnl < 0 ? ' tr-agent-n' : '') + '">' + avgDisplay + '</div></div>';
+        }
+
+        _phoenixRenderRounds();
+    }
+
+    function _phoenixRenderRounds() {
+        var el = document.getElementById('phxRounds');
+        if (!el) return;
+        var b = _phoenixGetBot();
+        var rounds = b.rounds || [];
+        if (rounds.length === 0) { el.innerHTML = '<div class="tr-bot-rounds-empty">' + (settingsT('terminal.no_rounds') || 'No completed rounds') + '</div>'; return; }
+        var total = 0;
+        for (var ri = 0; ri < rounds.length; ri++) total += rounds[ri].pnl;
+        var html = '<div class="tr-bot-rounds-tbl"><div class="tr-bot-rounds-tr tr-bot-rounds-th"><span></span><span>#</span><span>' + (settingsT('terminal.strategy_time') || 'Time') + '</span><span>' + (settingsT('terminal.strategy_sym') || 'Sym') + '</span><span class="tr-bot-rounds-pnl">PnL</span></div>';
+        var start = Math.max(0, rounds.length - 30);
+        for (var i = start; i < rounds.length; i++) {
+            var r = rounds[i];
+            var ts = new Date(r.endTime).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+            var ps = (r.pnl >= 0 ? '+' : '') + '$' + r.pnl.toFixed(2);
+            var pc = r.pnl >= 0 ? 'tr-bot-rounds-grn' : 'tr-bot-rounds-red';
+            html += '<div class="tr-bot-rounds-tr"><button class="tr-bot-rounds-del" title="Delete">\u2715</button><span>' + (r.num || i + 1) + '</span><span>' + ts + '</span><span>' + (r.sym || '') + '</span><span class="tr-bot-rounds-pnl ' + pc + '">' + ps + '</span></div>';
+        }
+        var ts2 = (total >= 0 ? '+' : '') + '$' + total.toFixed(2);
+        var tc2 = total >= 0 ? 'tr-bot-rounds-grn' : 'tr-bot-rounds-red';
+        html += '<div class="tr-bot-rounds-tr tr-bot-rounds-total"><span></span><span></span><span></span><span>' + (settingsT('terminal.strategy_total') || 'Total') + '</span><span class="tr-bot-rounds-pnl ' + tc2 + '">' + ts2 + '</span></div></div>';
+        el.innerHTML = html;
+    }
+
+    var STRATEGY_DESCS = {
+        clob: {
+            title: 'CLOB Arbitrage',
+            desc: 'CLOB (Central Limit Order Book) arbitrage strategy scans the Polymarket order book for pricing inefficiencies between the Yes/No outcomes of prediction markets. When the spread between buy and sell orders creates a risk-free profit opportunity, the bot executes simultaneous buy-low/sell-high orders to capture the difference. Key parameters: Min Spread (minimum profitable spread), Rebate (maker rebate percentage), Order Size, Timeout, and Gas cost. Suitable for markets with high liquidity and tight spreads.'
+        },
+        delta: {
+            title: 'Delta Mesh',
+            desc: 'Delta Mesh is a market-making strategy that maintains delta-neutral positions by simultaneously placing limit orders on both Yes and No outcomes. The bot continuously adjusts order prices based on market movements to capture the bid-ask spread. This strategy works best in volatile markets where price fluctuations create frequent rebalancing opportunities. Risk is minimized through delta hedging.'
+        },
+        phoenix: {
+            title: 'Phoenix',
+            desc: 'Phoenix is a trend-following strategy that enters positions when price momentum is detected in either direction. It uses configurable entry and target prices (in cents), with budget management (percentage or fixed amount) and an optional stop-loss. The strategy is designed for short-term trades on 5-minute timeframes, automatically compounding profits through rolling reinvestment.'
+        }
+    };
+
+    function _renderStrategies() {
+        var list = document.getElementById('trStrategiesList');
+        if (!list) return;
+        var strategies = getStrategies();
+        var html = '';
+        for (var si = 0; si < strategies.length; si++) {
+            var s = strategies[si];
+            html += '<div class="tr-strategy-card">'
+                + '<div class="tr-strategy-head">'
+                + '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>'
+                + '<span>' + (settingsT('terminal.strategy_num') || 'Strategy').replace('{n}', si + 1) + '</span>'
+                + '</div>'
+                + '<div class="tr-strategy-field"><label>' + (settingsT('terminal.strategy_name') || 'Name') + '</label>'
+                + '<input class="tr-input tr-strategy-name" value="' + escHtml(s.name) + '" placeholder="' + (settingsT('terminal.strategy_name_ph') || 'Strategy name') + '"></div>'
+                + '<div class="tr-strategy-field"><label>' + (settingsT('terminal.strategy_desc') || 'Description') + '</label>'
+                + '<textarea class="tr-input tr-strategy-desc" rows="2" placeholder="' + (settingsT('terminal.strategy_desc_ph') || 'Description') + '">' + escHtml(s.desc) + '</textarea></div>'
+                + '<div class="tr-strategy-row">'
+                + '<div class="tr-strategy-field tr-strategy-field-half"><label>' + (settingsT('terminal.strategy_tf') || 'Timeframe') + '</label>'
+                + '<select class="tr-strategy-tf">'
+                + ['5M','15M','1H','4H'].map(function(tf) { return '<option value="' + tf + '"' + (s.timeframe === tf ? ' selected' : '') + '>' + tf + '</option>'; }).join('')
+                + '</select></div>'
+                + '<div class="tr-strategy-field tr-strategy-field-half"><label>' + (settingsT('terminal.strategy_asset') || 'Asset') + '</label>'
+                + '<select class="tr-strategy-asset">'
+                + ['BTC','ETH','SOL','XRP','BNB','DOGE'].map(function(a) { return '<option value="' + a + '"' + (s.asset === a ? ' selected' : '') + '>' + a + '</option>'; }).join('')
+                + '</select></div></div>'
+                + '</div>';
+        }
+        list.innerHTML = html;
+        var saveBtn = document.getElementById('trStrategiesSaveBtn');
+        if (saveBtn) {
+            saveBtn.onclick = function() {
+                var cards = list.querySelectorAll('.tr-strategy-card');
+                var updated = [];
+                cards.forEach(function(card) {
+                    var name = (card.querySelector('.tr-strategy-name') || {}).value || '';
+                    var desc = (card.querySelector('.tr-strategy-desc') || {}).value || '';
+                    var tf = (card.querySelector('.tr-strategy-tf') || {}).value || '5M';
+                    var asset = (card.querySelector('.tr-strategy-asset') || {}).value || 'BTC';
+                    updated.push({ name: name, desc: desc, timeframe: tf, asset: asset });
+                });
+                if (updated.length === 3) {
+                    saveStrategies(updated);
+                    var status = document.getElementById('trStrategiesStatus');
+                    if (status) {
+                        status.textContent = '\u2713 Saved';
+                        status.style.color = '#3fb950';
+                        setTimeout(function() { if (status) status.textContent = ''; }, 2000);
+                    }
+                }
+            };
+        }
+    }
+
+    function getStrategies() {
+        try {
+            var d = JSON.parse(localStorage.getItem('polyStrategies'));
+            if (d && Array.isArray(d) && d.length === 3) return d;
+        } catch(e) {}
+        return [
+            { name: 'Strategy 1', desc: '', timeframe: '5M', asset: 'BTC' },
+            { name: 'Strategy 2', desc: '', timeframe: '15M', asset: 'ETH' },
+            { name: 'Strategy 3', desc: '', timeframe: '1H', asset: 'SOL' }
+        ];
+    }
+    function saveStrategies(p) {
+        localStorage.setItem('polyStrategies', JSON.stringify(p));
+    }
+
+    function _getCurrentCryptoInfo() {
+        var slug = _termSlug || '';
+        var evTitle = document.querySelector('.tr-event-title') ? document.querySelector('.tr-event-title').textContent : '';
+        var title = (slug + ' ' + evTitle).toLowerCase();
+        for (var key in CRYPTO_SYMBOLS) {
+            var re = new RegExp('\\b' + key + '\\b', 'i');
+            if (re.test(title)) return { symbol: key.toUpperCase(), timeframe: '5M' };
+        }
+        return null;
+    }
+
     function renderTradeWallets() {
         var section = $('tradeWalletsSection');
-        if (!section) return;
         var favs = JSON.parse(localStorage.getItem('polyFavorites') || '[]');
         var html = '<div class="tt-wallets-card">';
         html += '<div class="tt-wallets-header">Торговые кошельки</div>';
@@ -6951,7 +7734,7 @@
             'terminal.hero_copy': 'Copy Trading',
             'terminal.hero_strategies': 'Strategies',
             'terminal.switch_live': 'Live', 'terminal.switch_demo': 'Demo', 'terminal.switch_copy': 'Copy', 'terminal.switch_strategies': 'Strategies',
-            'terminal.ai_agent': 'AI', 'terminal.description': 'Описание', 'terminal.chart_empty': 'Выберите источник графика',
+            'terminal.ai_agent': 'AI', 'terminal.description': 'Описание', 'terminal.chart_title': 'График', 'terminal.chart_empty': 'Выберите источник графика', 'terminal.edit_setup': 'Настройка P', 'terminal.orderbook': 'Стакан', 'terminal.price': 'Цена', 'terminal.size': 'Размер',
             'terminal.wallet_title': 'Кошелёк', 'terminal.amount': 'Сумма ($)', 'terminal.possible_win': 'Возможный выигрыш',
             'terminal.market': 'Market', 'terminal.limit': 'Limit',
             'terminal.limit_price': 'Limit Price', 'terminal.shares': 'Акции', 'terminal.expiry': 'Истекает',
@@ -6968,6 +7751,7 @@
             'terminal.copy_config': 'Copy Trading', 'terminal.copy_desc': 'Настройте копирование сделок',
             'terminal.copy_input_ph': 'Адрес кошелька',
             'terminal.tracked_wallets': 'Отслеживаемые кошельки',
+            'terminal.strategy_trades': 'Сделки', 'terminal.strategy_wr': 'WR', 'terminal.strategy_rebate': 'Rebate', 'terminal.strategy_time': 'Время', 'terminal.strategy_sym': 'Пара', 'terminal.strategy_total': 'Итого', 'terminal.strategy_type': 'Тип', 'terminal.strategy_asset': 'Актив', 'terminal.strategy_balance': 'Баланс', 'terminal.strategy_amount': 'Сумма', 'terminal.strategy_detail': 'Детали', 'terminal.strategy_size': 'Размер', 'terminal.strategy_cur': 'Тек', 'terminal.strategy_rounds': 'Раунды', 'terminal.strategy_avg': 'Сред', 'terminal.strategy_num': 'Стратегия {n}', 'terminal.strategy_name': 'Название', 'terminal.strategy_desc': 'Описание', 'terminal.strategy_tf': 'ТФ', 'terminal.strategy_name_ph': 'Название стратегии', 'terminal.strategy_desc_ph': 'Описание стратегии', 'terminal.strategy_save': 'Сохранить', 'terminal.no_positions': 'Нет открытых позиций', 'terminal.no_rounds': 'Нет завершённых раундов', 'terminal.no_operations': 'Нет операций',
             'events.ai_title': 'AI Ассистент', 'events.ai_placeholder': 'Задайте вопрос...',
             'events.my_wallets_title': 'Мои кошельки',
             'events.markets_title': 'Рынки ({n})', 'events.market_label': 'Рынок',
@@ -6996,7 +7780,7 @@
             'terminal.hero_copy': 'Copy Trading',
             'terminal.hero_strategies': 'Strategies',
             'terminal.switch_live': 'Live', 'terminal.switch_demo': 'Demo', 'terminal.switch_copy': 'Copy', 'terminal.switch_strategies': 'Strategies',
-            'terminal.ai_agent': 'AI', 'terminal.description': 'Description', 'terminal.chart_empty': 'Select chart source',
+            'terminal.ai_agent': 'AI', 'terminal.description': 'Description', 'terminal.chart_title': 'Chart', 'terminal.chart_empty': 'Select chart source', 'terminal.edit_setup': 'Setup P', 'terminal.orderbook': 'Order Book', 'terminal.price': 'Price', 'terminal.size': 'Size',
             'terminal.wallet_title': 'Wallet', 'terminal.amount': 'Amount ($)', 'terminal.possible_win': 'Possible win',
             'terminal.market': 'Market', 'terminal.limit': 'Limit',
             'terminal.limit_price': 'Limit Price', 'terminal.shares': 'Shares', 'terminal.expiry': 'Expiry',
@@ -7013,6 +7797,7 @@
             'terminal.copy_config': 'Copy Trading', 'terminal.copy_desc': 'Configure trade copying',
             'terminal.copy_input_ph': 'Wallet address',
             'terminal.tracked_wallets': 'Tracked Wallets',
+            'terminal.strategy_trades': 'Trades', 'terminal.strategy_wr': 'WR', 'terminal.strategy_rebate': 'Rebate', 'terminal.strategy_time': 'Time', 'terminal.strategy_sym': 'Pair', 'terminal.strategy_total': 'Total', 'terminal.strategy_type': 'Type', 'terminal.strategy_asset': 'Asset', 'terminal.strategy_balance': 'Balance', 'terminal.strategy_amount': 'Amount', 'terminal.strategy_detail': 'Detail', 'terminal.strategy_size': 'Size', 'terminal.strategy_cur': 'Cur', 'terminal.strategy_rounds': 'Rounds', 'terminal.strategy_avg': 'Avg', 'terminal.strategy_num': 'Strategy {n}', 'terminal.strategy_name': 'Name', 'terminal.strategy_desc': 'Description', 'terminal.strategy_tf': 'TF', 'terminal.strategy_name_ph': 'Strategy name', 'terminal.strategy_desc_ph': 'Description', 'terminal.strategy_save': 'Save', 'terminal.no_positions': 'No open positions', 'terminal.no_rounds': 'No completed rounds', 'terminal.no_operations': 'No operations',
             'events.ai_title': 'AI Assistant', 'events.ai_placeholder': 'Ask a question...',
             'events.my_wallets_title': 'My Wallets',
             'events.markets_title': 'Markets ({n})', 'events.market_label': 'Market',
@@ -7041,7 +7826,7 @@
             'terminal.hero_copy': '跟单交易',
             'terminal.hero_strategies': '策略',
             'terminal.switch_live': '实盘', 'terminal.switch_demo': '模拟', 'terminal.switch_copy': '跟单', 'terminal.switch_strategies': '策略',
-            'terminal.ai_agent': 'AI', 'terminal.description': '描述', 'terminal.chart_empty': '选择图表源',
+            'terminal.ai_agent': 'AI', 'terminal.description': '描述', 'terminal.chart_title': '图表', 'terminal.chart_empty': '选择图表源', 'terminal.edit_setup': '设置 P', 'terminal.orderbook': '订单簿', 'terminal.price': '价格', 'terminal.size': '大小',
             'terminal.wallet_title': '钱包', 'terminal.amount': '金额 ($)', 'terminal.possible_win': '可能盈利',
             'terminal.market': '市价', 'terminal.limit': '限价',
             'terminal.limit_price': '限价', 'terminal.shares': '份额', 'terminal.expiry': '到期',
@@ -7058,6 +7843,7 @@
             'terminal.copy_config': '跟单交易', 'terminal.copy_desc': '配置交易复制',
             'terminal.copy_input_ph': '钱包地址',
             'terminal.tracked_wallets': '追踪钱包',
+            'terminal.strategy_trades': '交易', 'terminal.strategy_wr': '胜率', 'terminal.strategy_rebate': '返佣', 'terminal.strategy_time': '时间', 'terminal.strategy_sym': '交易对', 'terminal.strategy_total': '总计', 'terminal.strategy_type': '类型', 'terminal.strategy_asset': '资产', 'terminal.strategy_balance': '余额', 'terminal.strategy_amount': '金额', 'terminal.strategy_detail': '详情', 'terminal.strategy_size': '大小', 'terminal.strategy_cur': '当前', 'terminal.strategy_rounds': '轮次', 'terminal.strategy_avg': '平均', 'terminal.strategy_num': '策略 {n}', 'terminal.strategy_name': '名称', 'terminal.strategy_desc': '描述', 'terminal.strategy_tf': '时间框架', 'terminal.strategy_name_ph': '策略名称', 'terminal.strategy_desc_ph': '策略描述', 'terminal.strategy_save': '保存', 'terminal.no_positions': '无持仓', 'terminal.no_rounds': '无完成轮次', 'terminal.no_operations': '无操作',
             'events.ai_title': 'AI 助手', 'events.ai_placeholder': '提问...',
             'events.my_wallets_title': '我的钱包',
             'events.markets_title': '市场 ({n})', 'events.market_label': '市场',
