@@ -94,7 +94,7 @@ body.light-theme #poly-stats-sidebar {
     min-height: 0;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
-    padding: 57px;
+    padding: 32px;
 }
 @media (max-width: 900px) {
     .sidebar-scroll { padding: 14px; }
