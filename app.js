@@ -4503,7 +4503,7 @@
             if (!_termMarket) return;
             var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
             if (!marketId) return;
-            pageFetch(GAMMA_API + '/markets/' + encodeURIComponent(marketId))
+            pageFetch(GAMMA_API + '/markets?condition_id=' + encodeURIComponent(marketId))
                 .then(function(text) {
                     var data = JSON.parse(text);
                     if (data && data.outcomePrices) {
@@ -4543,7 +4543,7 @@
         var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
         if (!tokenIds || !tokenIds[idx]) {
             // Try to fetch token IDs from gamma
-            var url = GAMMA_API + '/markets/' + encodeURIComponent(marketId);
+            var url = GAMMA_API + '/markets?condition_id=' + encodeURIComponent(marketId);
             pageFetch(url).then(function(text) {
                 var data = JSON.parse(text);
                 var tid = data && data.clobTokenIds;
