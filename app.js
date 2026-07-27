@@ -2979,6 +2979,9 @@
         _termSelectedOutcome = null;
         _termState = 'demo';
         _termOrderInited = true;
+        // Сбрасываем tokenIds — они могут быть невалидными из кэша
+        delete _termMarket.tokenIds;
+        delete _termMarket.clobTokenIds;
         _renderTerminalPanel();
     }
 
