@@ -2263,6 +2263,24 @@
             +       '<div id="ttSelectedMarket"></div>'
             +     '</div>'
             +   '</div>'
+            +   '<div class="tt-panel-col" id="ttPanelCol">'
+            +     '<div class="tr-ob-section" id="trObSection" style="display:none">'
+            +       '<div class="tr-ob-header">'
+            +         '<span class="tr-ob-title"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> Стакан</span>'
+            +         '<button class="tr-ob-refresh" id="trObRefresh">\u21bb</button>'
+            +       '</div>'
+            +       '<div class="tr-ob-ud">'
+            +         '<button class="tr-ob-ud-btn active" id="trObUp">UP</button>'
+            +         '<button class="tr-ob-ud-btn" id="trObDown">DOWN</button>'
+            +       '</div>'
+            +       '<div class="tr-ob-col-headers">'
+            +         '<span class="tr-ob-ch-price"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg> Price</span>'
+            +         '<span class="tr-ob-ch-size"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M4 9h16v2H4V9zm0 4h10v2H4v-2z"/></svg> Size</span>'
+            +         '<span class="tr-ob-ch-total"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> Total</span>'
+            +       '</div>'
+            +       '<div class="tr-ob-body" id="trObBody"><div class="tr-ob-loading">Загрузка...</div></div>'
+            +     '</div>'
+            +   '</div>'
             + '</div>'
             + '<div id="tradeWalletsSection"></div>';
         var linkInput = $('ttLinkInput');
@@ -3276,7 +3294,7 @@
         var markets = ev && ev.markets ? ev.markets : [m];
         var isSingleMarket = markets.length === 1;
 
-        var html = '<div class="tr-terminal"><div class="tr-terminal-main">';
+        var html = '<div class="tr-terminal">';
 
         // 1. MODE BAR
         html += '<div class="tr-mode-bar">'
@@ -3739,26 +3757,6 @@
             + '<div class="tr-section-title-bar"><span>' + (t('terminal.tracked_wallets') || 'Tracked Wallets') + '</span>'
             + '<button class="tr-section-close" id="trWalletsClose">&times;</button></div>'
             + '<div id="trWalletsContent"><div class="tr-loading">' + (t('events.loading') || 'Loading...') + '</div></div></div>';
-
-        html += '</div>'; // end tr-terminal-main
-
-        // 15. ORDER BOOK (right sidebar)
-        html += '<div class="tr-terminal-sidebar"><div class="tr-ob-section" id="trObSection" style="display:none">'
-            + '<div class="tr-ob-header">'
-            + '<span class="tr-ob-title"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> ' + (t('terminal.orderbook') || 'Order Book') + '</span>'
-            + '<button class="tr-ob-refresh" id="trObRefresh">\u21bb</button>'
-            + '</div>'
-            + '<div class="tr-ob-ud">'
-            + '<button class="tr-ob-ud-btn active" id="trObUp">UP</button>'
-            + '<button class="tr-ob-ud-btn" id="trObDown">DOWN</button>'
-            + '</div>'
-            + '<div class="tr-ob-col-headers">'
-            + '<span class="tr-ob-ch-price"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg> ' + (t('terminal.price') || 'Price') + '</span>'
-            + '<span class="tr-ob-ch-size"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M4 9h16v2H4V9zm0 4h10v2H4v-2z"/></svg> ' + (t('terminal.size') || 'Size') + '</span>'
-            + '<span class="tr-ob-ch-total"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> ' + (t('terminal.total') || 'Total') + '</span>'
-            + '</div>'
-            + '<div class="tr-ob-body" id="trObBody"><div class="tr-ob-loading">' + (t('events.loading') || 'Loading...') + '</div></div>'
-            + '</div></div>'; // end tr-ob-section, tr-terminal-sidebar
 
         html += '</div>'; // end tr-terminal
 

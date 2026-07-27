@@ -98,8 +98,6 @@ body.light-theme #poly-stats-sidebar {
 }
 @media (max-width: 900px) {
     .sidebar-scroll { padding: 14px; }
-    .tr-terminal { grid-template-columns: 1fr; }
-    .tr-terminal-sidebar { position: static; }
 }
 @media (max-width: 640px) {
     .sidebar-scroll { padding: 12px; }
@@ -1298,8 +1296,6 @@ body.light-theme .hi-copy-btn:hover { background: rgba(87,96,106,0.1); color: #2
 
 /* Phones ≤640px */
 @media (max-width: 640px) {
-    .tr-terminal { grid-template-columns: 1fr; }
-    .tr-terminal-sidebar { position: static; }
     .sidebar-menu { width: 240px; right: 10px; }
     .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .details-grid { grid-template-columns: 1fr; }
@@ -1319,6 +1315,8 @@ body.light-theme .hi-copy-btn:hover { background: rgba(87,96,106,0.1); color: #2
 
 /* Tablets 641-900px */
 @media (min-width: 641px) and (max-width: 900px) {
+    .tt-top-row { grid-template-columns: 1fr; }
+    .tt-panel-col { order: 2; }
     .ab-grid { grid-template-columns: repeat(2, 1fr); }
     .stats-grid-three { grid-template-columns: repeat(3, 1fr); }
     .wa-section { padding: 12px 14px; }
@@ -1434,7 +1432,8 @@ body.light-theme .tv-chart-section { border-color: #d0d7de; }
 }
 .tt-whales-col { min-width: 0; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
 .tt-chart-col { min-width: 0; }
-.tt-panel-col { min-width: 0; }
+.tt-panel-col { min-width: 0; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+@media (max-width: 900px) { .tt-panel-col { position: static; max-height: none; overflow-y: visible; } }
 
 .tt-sym-bar {
     display: flex;
@@ -3466,11 +3465,7 @@ body.light-theme .tr-module-prompt-text {
 }
 
 /* === TRADE TERMINAL === */
-.tr-terminal { padding: 4px 0; display: grid; grid-template-columns: 1fr 280px; gap: 12px; align-items: start; }
-.tr-terminal-main { min-width: 0; }
-.tr-terminal-sidebar { position: sticky; top: 12px; min-width: 0; }
-.tr-terminal-sidebar .tr-ob-section { margin-top: 0; height: calc(100vh - 24px); display: flex; flex-direction: column; }
-.tr-terminal-sidebar .tr-ob-body { flex: 1; overflow-y: auto; }
+.tr-terminal { padding: 4px 0; }
 /* Floating panels — separate fixed-position blocks */
 .floating-panel { position: fixed; z-index: 9999; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; box-shadow: -4px 0 24px rgba(0,0,0,0.4); pointer-events: none; }
 .floating-panel .fp-body,
