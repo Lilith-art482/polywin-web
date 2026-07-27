@@ -20,6 +20,7 @@
     let _tradeInited = false;
     let _whaleData = [];
     let _aiRequested = {};
+    var _prevTabBeforeSettings = null;
 
     const WHALE_THRESHOLD = 20000;
     const DATA_API = 'https://data-api.polymarket.com';
@@ -491,7 +492,7 @@
         var welcomeScreen = $('welcome-screen');
         var hamburgerBtn = $('hamburgerBtn');
         var wsGearBtn = $('wsGearBtn');
-        var settingsBtn = $('settingsBtn');
+        var settingsBtn = $('settingsQuickBtn');
         var authForms = $('profileAuthForms');
         var loggedInEl = $('profileLoggedIn');
         var tariffSection = $('profileTariffSection');
@@ -596,6 +597,12 @@
 
         var tabContent = $(tabName + '-tab');
         if (tabContent) tabContent.classList.add('active');
+
+        if (tabName !== 'calls' && window._callsInterval) {
+            clearInterval(window._callsInterval);
+            window._callsInterval = null;
+            if (window._callsTimerUpdater) { clearInterval(window._callsTimerUpdater); window._callsTimerUpdater = null; }
+        }
 
         if (tabName === 'wallet') initWalletTab();
         else if (tabName === 'trade') initTradeTab();
@@ -2162,11 +2169,72 @@
     var _demoPositions = JSON.parse(localStorage.getItem('polyDemoPositions') || '{}');
 
     function initTradeTab() {
+        var container = $('trade-content');
+        if (!container) return;
+        _renderTradeSplashHtml(container);
+        _setupTradeSearch(container);
+    }
+
+    function _renderTradeSplashHtml(container) {
+        var t = _settingsT || function(k) { var m = { 'terminal.hero_title':'Торговый терминал','events.search_placeholder':'Вставьте ссылку Polymarket или slug...','events.search_btn':'Поиск','terminal.feat_ai':'AI agent для торговли','terminal.feat_auto':'Свои автоматизированные системы','terminal.feat_market':'Рыночные ордера','terminal.feat_limit':'Лимитные ордера','terminal.feat_demo':'Демо-счёт $100k','terminal.hero_copy':'Copy Trading','terminal.hero_strategies':'Strategies' }; return m[k] || k; };
+        container.innerHTML = '<div class="tr-initial">'
+            + '<div class="tr-hero-card">'
+            + '<div class="tr-hero-visual"><svg viewBox="0 0 240 72" width="240" height="72" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="30" y="48" width="20" height="16" rx="3" fill="#4C7F6E" fill-opacity="0.12" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.25"/><rect x="62" y="32" width="20" height="32" rx="3" fill="#4C7F6E" fill-opacity="0.2" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.35"/><rect x="94" y="16" width="20" height="48" rx="3" fill="#4C7F6E" fill-opacity="0.35" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.5"/><rect x="126" y="28" width="20" height="36" rx="3" fill="#4C7F6E" fill-opacity="0.25" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.4"/><rect x="158" y="20" width="20" height="44" rx="3" fill="#4C7F6E" fill-opacity="0.3" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.45"/><rect x="190" y="40" width="20" height="24" rx="3" fill="#4C7F6E" fill-opacity="0.15" stroke="#4C7F6E" stroke-width="1.2" stroke-opacity="0.3"/><path d="M40 48 L72 32 L104 16 L136 28 L168 20 L200 40" stroke="#4C7F6E" stroke-width="1.5" stroke-opacity="0.2" stroke-dasharray="3 3"/></svg></div>'
+            + '<h2 class="tr-hero-title">' + t('terminal.hero_title') + '</h2>'
+            + '<div class="tr-hero-search">'
+            + '<input class="tr-hero-search-input" id="tr-search-input" type="text" placeholder="' + t('events.search_placeholder') + '">'
+            + '<button class="tr-hero-search-btn" id="tr-search-btn">' + t('events.search_btn') + '</button>'
+            + '</div>'
+            + '<div class="tr-hero-pills">'
+            + '<span class="tr-hero-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="4"/><path d="M8 12c0 2 2 3 2 5h4c0-2 2-3 2-5"/><path d="M16 20c0-2-2-3-2-5"/><path d="M8 20c0-2 2-3 2-5"/><path d="M6 20h12"/></svg><span>' + t('terminal.feat_ai') + '</span></span>'
+            + '<span class="tr-hero-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span>' + t('terminal.feat_auto') + '</span></span>'
+            + '<span class="tr-hero-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>' + t('terminal.feat_market') + '</span></span>'
+            + '<span class="tr-hero-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg><span>' + t('terminal.feat_limit') + '</span></span>'
+            + '<span class="tr-hero-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>' + t('terminal.feat_demo') + '</span></span>'
+            + '</div>'
+            + '<div class="tr-hero-actions">'
+            + '<button class="tr-hero-action-btn" data-quick-mode="copy"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg><span>' + t('terminal.hero_copy') + '</span></button>'
+            + '<button class="tr-hero-action-btn" data-quick-mode="strategies"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/><path d="M2 20h20"/></svg><span>' + t('terminal.hero_strategies') + '</span></button>'
+            + '</div>'
+            + '</div></div>';
+    }
+
+    function _setupTradeSearch(container) {
+        var input = container.querySelector('#tr-search-input');
+        var btn = container.querySelector('#tr-search-btn');
+        if (!input || !btn) return;
+        function doSearch() {
+            var val = input.value.trim();
+            if (!val) return;
+            _buildTradeView();
+            setTimeout(function() { loadEventFromUrl(val); }, 50);
+        }
+        btn.onclick = doSearch;
+        input.onkeydown = function(e) { if (e.key === 'Enter') doSearch(); };
+        container.querySelectorAll('[data-quick-mode]').forEach(function(qb) {
+            qb.onclick = function() {
+                var mode = qb.dataset.quickMode;
+                if (mode === 'copy') {
+                    var c = $('trade-content');
+                    if (c) {
+                        _buildCopyModuleHtml();
+                        setTimeout(initCopyPanel, 50);
+                    }
+                } else if (mode === 'strategies') {
+                    var c = $('trade-content');
+                    if (c) {
+                        _buildStrategiesModuleHtml();
+                        setTimeout(initStrategiesPanel, 50);
+                    }
+                }
+            };
+        });
+    }
+
+    function _buildTradeView() {
         var content = $('trade-content');
         if (!content) return;
-        if (_tradeInited) return;
         _tradeInited = true;
-
         content.innerHTML = ''
             + '<div class="tt-top-row">'
             +   '<div class="tt-whales-col">'
@@ -2194,10 +2262,8 @@
             +   '</div>'
             + '</div>'
             + '<div id="tradeWalletsSection"></div>';
-
         var linkInput = $('ttLinkInput');
         var linkBtn = $('ttLinkBtn');
-
         function handleLoad() {
             if (linkInput) loadEventFromUrl(linkInput.value.trim());
         }
@@ -2205,13 +2271,46 @@
         if (linkInput) linkInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') handleLoad();
         });
-
-        setupBacktest();
-        renderTradeWallets();
+        setTimeout(setupBacktest, 100);
+        setTimeout(renderTradeWallets, 100);
         setTimeout(function() {
             initCopyPanel();
             mountTradingPanelOnMarket();
-        }, 100);
+        }, 200);
+    }
+
+    function _buildCopyModuleHtml() {
+        var c = $('trade-content');
+        if (!c) return '';
+        c.innerHTML = '<div style="padding:8px 0">'
+            + '<div class="tr-module-header">'
+            + '<button class="tr-module-back" id="trModuleBack"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>'
+            + '<span class="tr-module-title">Copy Trading</span>'
+            + '</div>'
+            + '<div id="cpWalletsList" style="margin-top:12px"></div>'
+            + '<div id="cpSelectedInfo" style="display:none;margin-top:12px"></div>'
+            + '<div id="cpTradesList" style="display:none;margin-top:12px"></div>'
+            + '<div id="cpLogSection" style="display:none;margin-top:12px"></div>'
+            + '</div>';
+        var backBtn = $('trModuleBack');
+        if (backBtn) backBtn.onclick = function() { initTradeTab(); };
+    }
+
+    function _buildStrategiesModuleHtml() {
+        var c = $('trade-content');
+        if (!c) return '';
+        c.innerHTML = '<div style="padding:8px 0">'
+            + '<div class="tr-module-header">'
+            + '<button class="tr-module-back" id="trModuleBack"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>'
+            + '<span class="tr-module-title">Strategies</span>'
+            + '</div>'
+            + '<div id="trStrategiesPanel">'
+            + '<div class="tr-strat-row"><button class="tr-strat-btn" data-strat="clob">CLOB Market Making</button><button class="tr-strat-btn" data-strat="delta">Delta Neutral</button><button class="tr-strat-btn" data-strat="phoenix">Phoenix</button></div>'
+            + '<div id="trStratContent" style="margin-top:12px"></div>'
+            + '</div>'
+            + '</div>';
+        var backBtn = $('trModuleBack');
+        if (backBtn) backBtn.onclick = function() { initTradeTab(); };
     }
 
     var CRYPTO_SYMBOLS = {
@@ -2815,37 +2914,431 @@
         return html;
     }
 
+    // ====================== TRADE TERMINAL CORE ======================
+    var _termMarket = null;
+    var _termEvent = null;
+    var _termSelectedOutcome = null;
+    var _termMarkets = [];
+    var _termState = 'demo';
+    var _termPriceInterval = null;
+    var _obCache = {};
+    var _termOrderInited = false;
+
     function mountTradingPanelOnMarket() {
-        var mountEl = $('tpReactMount');
-        if (!mountEl || !window.mountTradingPanel) return;
+        var sel = $('ttSelectedMarket');
+        if (!sel) return;
         if (!_selectedMarket) {
-            mountEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:11px">Выберите событие слева</div>';
+            sel.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:11px">Выберите событие слева</div>';
             return;
         }
+        _termMarket = _selectedMarket;
+        _termEvent = _selectedEvent;
+        _termMarkets = [_selectedMarket];
+        _termSelectedOutcome = null;
+        _termState = 'demo';
+        _termOrderInited = true;
+        _renderTerminalPanel();
+    }
 
-        var market = _selectedMarket;
-        var ev = _selectedEvent;
-        var prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : [];
-        var yesPrice = prices[0] ? parseFloat(prices[0]) : null;
-        var noPrice = prices[1] ? parseFloat(prices[1]) : null;
+    function _renderTerminalPanel() {
+        var sel = $('ttSelectedMarket');
+        if (!sel || !_termMarket) return;
+        var m = _termMarket;
+        var ev = _termEvent;
+        var prices = m.outcomePrices ? JSON.parse(m.outcomePrices) : [];
+        var upPrice = prices[0] ? parseFloat(prices[0]) : 0.5;
+        var downPrice = prices[1] ? parseFloat(prices[1]) : 0.5;
+        var question = m.question || (ev ? ev.title : '');
+        var endDate = m.endDate || (ev ? ev.endDate : '');
+        var timeLeft = endDate ? calcTimeRemaining(endDate) : '';
 
-        var eventData = {
-            eventId: market.conditionId || market.id || '',
-            question: market.question || (ev ? ev.title : '') || '',
-            outcomes: [
-                { id: 'yes', label: 'Да', price: yesPrice, volume: 0 },
-                { id: 'no', label: 'Нет', price: noPrice, volume: 0 }
-            ],
-            currentUserBalance: _demoBalance,
-            marketType: 'binary',
-            timeRemaining: market.endDate ? calcTimeRemaining(market.endDate) : '',
-            tickSize: 0.01
-        };
+        var html = '<div class="tr-terminal">'
+            + '<div class="tr-mode-bar">'
+            +   '<button class="tr-mode-btn active" data-mode="demo">Demo Trade</button>'
+            +   '<button class="tr-mode-btn" data-mode="copy">Copy</button>'
+            +   '<button class="tr-mode-btn" data-mode="strategies">Strategies</button>'
+            + '</div>'
+            + '<div class="tr-event-header">'
+            +   '<div class="tr-event-title-row">'
+            +     '<div class="tr-event-title">' + escHtml(question) + '</div>'
+            +     '<div class="tr-event-timer">' + timeLeft + '</div>'
+            +   '</div>'
+            +   '<div class="tr-event-actions">'
+            +     '<button class="tr-ev-btn tr-call-btn" id="trCallBtn">📣</button>'
+            +   '</div>'
+            + '</div>'
+            + '<div class="tr-outcomes">'
+            +   '<div class="tr-outcome-card" data-idx="0">'
+            +     '<div class="tr-outcome-name">UP / YES</div>'
+            +     '<div class="tr-outcome-price" style="color:#22c55e">' + (upPrice * 100).toFixed(1) + '¢</div>'
+            +   '</div>'
+            +   '<div class="tr-outcome-card" data-idx="1">'
+            +     '<div class="tr-outcome-name">DOWN / NO</div>'
+            +     '<div class="tr-outcome-price" style="color:#ef4444">' + (downPrice * 100).toFixed(1) + '¢</div>'
+            +   '</div>'
+            + '</div>'
+            + '<div class="tr-price-wrap">'
+            +   '<button class="tr-price-step" data-step="-10">−10¢</button>'
+            +   '<button class="tr-price-step" data-step="-5">−5¢</button>'
+            +   '<button class="tr-price-step" data-step="-1">−1¢</button>'
+            +   '<input class="tr-price-input" id="trPriceInput" type="number" step="0.1" value="' + (upPrice * 100).toFixed(1) + '" style="width:60px;text-align:center">'
+            +   '<button class="tr-price-step" data-step="1">+1¢</button>'
+            +   '<button class="tr-price-step" data-step="5">+5¢</button>'
+            +   '<button class="tr-price-step" data-step="10">+10¢</button>'
+            + '</div>'
+            + '<div class="tr-dir-row">'
+            +   '<button class="tr-dir-btn tr-dir-up" data-dir="0"><span class="tr-dir-label">UP</span><span class="tr-dir-bar" id="trDirBar0"><span style="width:' + (upPrice * 100) + '%"></span></span><span class="tr-dir-price" style="color:#22c55e">' + (upPrice * 100).toFixed(1) + '¢</span></button>'
+            +   '<button class="tr-dir-btn tr-dir-down" data-dir="1"><span class="tr-dir-label">DOWN</span><span class="tr-dir-bar" id="trDirBar1"><span style="width:' + (downPrice * 100) + '%"></span></span><span class="tr-dir-price" style="color:#ef4444">' + (downPrice * 100).toFixed(1) + '¢</span></button>'
+            + '</div>'
+            + '<div class="tr-size-row">'
+            +   '<label class="tr-size-label">Сумма ($)</label>'
+            +   '<input class="tr-size-input" id="trAmountInput" type="number" value="100" min="1" step="1">'
+            + '</div>'
+            + '<div class="tr-quick-row">'
+            +   '<button class="tr-qty-btn" data-amt="10">$10</button>'
+            +   '<button class="tr-qty-btn" data-amt="25">$25</button>'
+            +   '<button class="tr-qty-btn" data-amt="100">$100</button>'
+            +   '<button class="tr-qty-btn" data-amt="500">$500</button>'
+            + '</div>'
+            + '<div class="tr-payout-row" id="trPayoutField" style="display:none">'
+            +   '<span class="tr-payout-label">Возможный выигрыш:</span>'
+            +   '<span class="tr-payout-val" id="trPayoutVal">$0.00</span>'
+            +   '<span class="tr-payout-shares" id="trPayoutShares">0 shares</span>'
+            + '</div>'
+            + '<div class="tr-total-row" id="trTotalField">'
+            +   '<span>Total: <strong id="trTotalAmt">$100.00</strong></span>'
+            + '</div>'
+            + '<div class="tr-pos-section" id="trPosSection" style="display:none">'
+            +   '<div class="tr-pos-header">Мои позиции</div>'
+            +   '<div class="tr-pos-body" id="trPosBody"></div>'
+            + '</div>'
+            + '<button class="tr-submit-btn" id="trSubmitBtn">Купить</button>'
+            + '</div>';
 
-        mountEl.innerHTML = '';
-        window.mountTradingPanel(mountEl, eventData, function(order) {
-            handleReactOrder(order);
+        sel.innerHTML = html;
+
+        // Outcome selection
+        sel.querySelectorAll('.tr-outcome-card').forEach(function(card) {
+            card.onclick = function() {
+                _termSelectedOutcome = { marketId: m.conditionId || m.id, index: parseInt(card.dataset.idx) };
+                sel.querySelectorAll('.tr-outcome-card').forEach(function(c) { c.classList.remove('active'); });
+                card.classList.add('active');
+                _updateTotal();
+                _updateOrderBook();
+            };
         });
+        // Select first outcome by default
+        var firstOutcome = sel.querySelector('.tr-outcome-card');
+        if (firstOutcome) firstOutcome.onclick();
+
+        // Direction buttons
+        sel.querySelectorAll('.tr-dir-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                var dir = parseInt(btn.dataset.dir);
+                _termSelectedOutcome = { marketId: m.conditionId || m.id, index: dir };
+                sel.querySelectorAll('.tr-dir-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                sel.querySelectorAll('.tr-outcome-card').forEach(function(c) { c.classList.remove('active'); });
+                var oc = sel.querySelector('.tr-outcome-card[data-idx="' + dir + '"]');
+                if (oc) oc.classList.add('active');
+                _updateTotal();
+                _updateOrderBook();
+            };
+        });
+
+        // Price steps
+        sel.querySelectorAll('.tr-price-step').forEach(function(btn) {
+            btn.onclick = function() {
+                var input = document.getElementById('trPriceInput');
+                if (!input) return;
+                var step = parseFloat(btn.dataset.step);
+                var val = (parseFloat(input.value) || 0) + step;
+                input.value = Math.max(0.1, Math.min(99.9, val)).toFixed(1);
+                _updateTotal();
+            };
+        });
+        var priceInput = document.getElementById('trPriceInput');
+        if (priceInput) {
+            priceInput.oninput = function() { _updateTotal(); };
+        }
+
+        // Amount input
+        var amtInput = document.getElementById('trAmountInput');
+        if (amtInput) {
+            amtInput.oninput = function() { _updateTotal(); };
+        }
+
+        // Quick amount buttons
+        sel.querySelectorAll('.tr-qty-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                var input = document.getElementById('trAmountInput');
+                if (input) input.value = btn.dataset.amt;
+                _updateTotal();
+            };
+        });
+
+        // Mode switching
+        sel.querySelectorAll('.tr-mode-btn').forEach(function(btn) {
+            btn.onclick = function() {
+                sel.querySelectorAll('.tr-mode-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                _termState = btn.dataset.mode;
+            };
+        });
+
+        // Submit button
+        var submitBtn = document.getElementById('trSubmitBtn');
+        if (submitBtn) {
+            submitBtn.onclick = function() { _placeTermOrder(); };
+        }
+
+        // Call button
+        var callBtn = document.getElementById('trCallBtn');
+        if (callBtn && _termEvent) {
+            callBtn.onclick = function() { showCallModal('event'); };
+        }
+
+        _updateTotal();
+        _updatePosDisplay();
+        _startTermPriceRefresh();
+    }
+
+    function _updateTotal() {
+        var price = parseFloat(document.getElementById('trPriceInput')?.value) || 50;
+        var amt = parseFloat(document.getElementById('trAmountInput')?.value) || 0;
+        var totalEl = document.getElementById('trTotalAmt');
+        if (!totalEl) return;
+        var pDec = price / 100;
+        if (pDec > 0 && amt > 0) {
+            var shares = amt / pDec;
+            var profit = shares * (1 - pDec);
+            var payoutField = document.getElementById('trPayoutField');
+            var payoutVal = document.getElementById('trPayoutVal');
+            var payoutShares = document.getElementById('trPayoutShares');
+            if (payoutField && payoutVal && payoutShares) {
+                payoutField.style.display = 'flex';
+                payoutVal.textContent = '$' + fmtNum(profit.toFixed(2));
+                payoutShares.textContent = Math.floor(shares) + ' shares @ ' + price.toFixed(1) + '¢';
+            }
+        } else {
+            var payoutField = document.getElementById('trPayoutField');
+            if (payoutField) payoutField.style.display = 'none';
+        }
+        totalEl.textContent = '$' + fmtNum(amt.toFixed(2));
+    }
+
+    function _placeTermOrder() {
+        if (!_termSelectedOutcome || !_termMarket) return;
+        var amt = parseFloat(document.getElementById('trAmountInput')?.value) || 0;
+        if (amt <= 0) { alert('Введите сумму'); return; }
+        if (amt > _demoBalance) { alert('Недостаточно средств. Баланс: $' + fmtNum(_demoBalance.toFixed(2))); return; }
+
+        var prices = _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
+        var price = prices[_termSelectedOutcome.index] ? parseFloat(prices[_termSelectedOutcome.index]) : 0.5;
+        var shares = amt / price;
+        var outcomeLabel = _termSelectedOutcome.index === 0 ? 'UP/YES' : 'DOWN/NO';
+        var marketId = _termMarket.conditionId || _termMarket.id;
+        var title = _termMarket.question || (_termEvent ? _termEvent.title : '');
+
+        // Demo trade
+        _demoBalance -= amt;
+        if (!_demoPositions[marketId]) _demoPositions[marketId] = { market: _termMarket, trades: [] };
+        _demoPositions[marketId].trades.push({
+            side: 'buy',
+            outcomeId: outcomeLabel,
+            outcomeIndex: _termSelectedOutcome.index,
+            type: 'market',
+            amount: amt,
+            price: price,
+            shares: shares,
+            time: Date.now(),
+            title: title
+        });
+        localStorage.setItem('polyDemoBalance', String(_demoBalance));
+        localStorage.setItem('polyDemoPositions', JSON.stringify(_demoPositions));
+
+        _updatePosDisplay();
+        _updateTotal();
+
+        var msg = '✅ Куплено ' + outcomeLabel + ' на $' + fmtNum(amt.toFixed(2)) + ' (' + shares.toFixed(2) + ' акций)';
+        var status = $('ttLinkStatus');
+        if (status) {
+            status.className = 'tt-link-status tt-link-ok';
+            status.textContent = msg;
+            setTimeout(function() { status.textContent = ''; }, 3000);
+        }
+    }
+
+    function _updatePosDisplay() {
+        var section = document.getElementById('trPosSection');
+        var body = document.getElementById('trPosBody');
+        if (!section || !body || !_termMarket) return;
+        var marketId = _termMarket.conditionId || _termMarket.id;
+        var posData = _demoPositions[marketId];
+        if (!posData || !posData.trades || posData.trades.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+        section.style.display = 'block';
+        var prices = _termMarket.outcomePrices ? JSON.parse(_termMarket.outcomePrices) : [];
+        var html = '';
+        posData.trades.forEach(function(t, i) {
+            var currentPrice = prices[t.outcomeIndex] ? parseFloat(prices[t.outcomeIndex]) : t.price;
+            var currentVal = currentPrice * t.shares;
+            var pnl = currentVal - t.amount;
+            html += '<div class="tr-pos-item">'
+                + '<div class="tr-pos-side">' + escHtml(t.outcomeId) + '</div>'
+                + '<div class="tr-pos-info">'
+                +   '<span class="tr-pos-meta">' + t.shares.toFixed(2) + ' shares @ ' + (t.price * 100).toFixed(1) + '¢</span>'
+                +   '<span class="tr-pos-pnl ' + (pnl >= 0 ? 'pos' : 'neg') + '">' + (pnl >= 0 ? '+' : '') + '$' + fmtNum(Math.abs(pnl).toFixed(2)) + '</span>'
+                + '</div>'
+                + '</div>';
+        });
+        body.innerHTML = html;
+    }
+
+    function _startTermPriceRefresh() {
+        if (_termPriceInterval) clearInterval(_termPriceInterval);
+        _termPriceInterval = setInterval(function() {
+            if (!_termMarket) return;
+            var marketId = _termMarket.conditionId || _termMarket.id;
+            if (!marketId) return;
+            pageFetch(GAMMA_API + '/markets/' + encodeURIComponent(marketId))
+                .then(function(text) {
+                    var data = JSON.parse(text);
+                    if (data && data.outcomePrices) {
+                        _termMarket.outcomePrices = data.outcomePrices;
+                        var prices = JSON.parse(data.outcomePrices);
+                        var dirBars = document.querySelectorAll('.tr-dir-bar span');
+                        var dirPrices = document.querySelectorAll('.tr-dir-price');
+                        var outCards = document.querySelectorAll('.tr-outcome-price');
+                        if (prices[0] !== undefined) {
+                            if (dirBars[0]) dirBars[0].style.width = (prices[0] * 100) + '%';
+                            if (dirPrices[0]) dirPrices[0].textContent = (prices[0] * 100).toFixed(1) + '¢';
+                            if (outCards[0]) outCards[0].textContent = (prices[0] * 100).toFixed(1) + '¢';
+                        }
+                        if (prices[1] !== undefined) {
+                            if (dirBars[1]) dirBars[1].style.width = (prices[1] * 100) + '%';
+                            if (dirPrices[1]) dirPrices[1].textContent = (prices[1] * 100).toFixed(1) + '¢';
+                            if (outCards[1]) outCards[1].textContent = (prices[1] * 100).toFixed(1) + '¢';
+                        }
+                        _updatePosDisplay();
+                    }
+                })
+                .catch(function() {});
+        }, 5000);
+
+        // Also watch for demo balance changes
+        setInterval(function() {
+            var balEl = document.querySelector('.tr-mode-balance');
+            if (balEl) balEl.textContent = '$' + fmtNum(_demoBalance.toFixed(2));
+        }, 2000);
+    }
+
+    function _updateOrderBook() {
+        if (!_termSelectedOutcome || !_termMarket) return;
+        var marketId = _termMarket.conditionId || _termMarket.id;
+        var idx = _termSelectedOutcome.index;
+        var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
+        if (!tokenIds || !tokenIds[idx]) {
+            // Try to fetch token IDs from gamma
+            var url = GAMMA_API + '/markets/' + encodeURIComponent(marketId);
+            pageFetch(url).then(function(text) {
+                var data = JSON.parse(text);
+                var tid = data && data.clobTokenIds;
+                if (tid) {
+                    _termMarket.clobTokenIds = tid;
+                    _fetchAndRenderOb(tid[idx]);
+                }
+            }).catch(function() {});
+            return;
+        }
+        _fetchAndRenderOb(tokenIds[idx]);
+
+        // Also prefetch the other outcome
+        var otherIdx = 1 - idx;
+        if (tokenIds[otherIdx]) {
+            var cached = _obCache[tokenIds[otherIdx]];
+            if (!cached || Date.now() - cached.ts > 5000) {
+                pageFetch(CLOB_API + '/book?token_id=' + tokenIds[otherIdx])
+                    .then(function(t) { var d = JSON.parse(t); if (d) _obCache[tokenIds[otherIdx]] = { data: d, ts: Date.now() }; })
+                    .catch(function() {});
+            }
+        }
+    }
+
+    function _fetchAndRenderOb(tokenId) {
+        if (!tokenId) return;
+        var cached = _obCache[tokenId];
+        if (cached && Date.now() - cached.ts < 1000) {
+            _renderOB(cached.data);
+            return;
+        }
+        pageFetch(CLOB_API + '/book?token_id=' + tokenId)
+            .then(function(text) {
+                var data = JSON.parse(text);
+                if (data) {
+                    _obCache[tokenId] = { data: data, ts: Date.now() };
+                    _renderOB(data);
+                }
+            })
+            .catch(function() {});
+    }
+
+    function _renderOB(book) {
+        if (!book) return;
+        var sel = $('ttSelectedMarket');
+        if (!sel) return;
+        var obSection = sel.querySelector('.tr-ob-section');
+        if (!obSection) {
+            // Inject order book after terminal
+            var term = sel.querySelector('.tr-terminal');
+            if (!term) return;
+            var obDiv = document.createElement('div');
+            obDiv.className = 'tr-ob-section';
+            obDiv.innerHTML = '<div class="tr-ob-header">'
+                + '<span class="tr-ob-title">Order Book</span>'
+                + '<button class="tr-ob-refresh" id="trObRefresh">↻</button>'
+                + '</div>'
+                + '<div class="tr-ob-table" id="trObBody"></div>'
+                + '<div class="tr-ob-summary" id="trObSummary"></div>';
+            term.after(obDiv);
+            var refreshBtn = document.getElementById('trObRefresh');
+            if (refreshBtn) refreshBtn.onclick = function() { _updateOrderBook(); };
+        }
+        var body = document.getElementById('trObBody');
+        var summary = document.getElementById('trObSummary');
+        if (!body) return;
+
+        var asks = (book.asks || []).slice(0, 8);
+        var bids = (book.bids || []).slice(0, 8);
+        var norm = function(o) { return Array.isArray(o) ? { price: parseFloat(o[0]), size: parseFloat(o[1]) } : { price: parseFloat(o.price || 0), size: parseFloat(o.size || 0) }; };
+        asks = asks.map(norm).sort(function(a, b) { return b.price - a.price; });
+        bids = bids.map(norm).sort(function(a, b) { return b.price - a.price; });
+
+        var maxAsk = asks.length > 0 ? Math.max.apply(null, asks.map(function(o) { return o.size; })) : 1;
+        var maxBid = bids.length > 0 ? Math.max.apply(null, bids.map(function(o) { return o.size; })) : 1;
+
+        var html = '';
+        asks.forEach(function(o) {
+            var pct = (o.size / maxAsk * 100).toFixed(0);
+            html += '<div class="tr-ob-row tr-ob-ask"><span class="tr-ob-price" style="color:#ef4444">' + (o.price * 100).toFixed(1) + '¢</span><span class="tr-ob-size">' + o.size.toFixed(2) + '</span><span class="tr-ob-bar"><span style="width:' + pct + '%"></span></span></div>';
+        });
+        var bestAsk = asks.length > 0 ? asks[asks.length - 1] : null;
+        var bestBid = bids.length > 0 ? bids[0] : null;
+        var lastPrice = bestAsk && bestBid ? ((bestAsk.price + bestBid.price) / 2) : (bestAsk ? bestAsk.price : (bestBid ? bestBid.price : 0));
+        var spread = bestAsk && bestBid ? ((bestAsk.price - bestBid.price) * 100).toFixed(1) : '—';
+        html += '<div class="tr-ob-spread"><span>Spread: ' + spread + '¢</span><span>Last: ' + (lastPrice * 100).toFixed(1) + '¢</span></div>';
+        bids.forEach(function(o) {
+            var pct = (o.size / maxBid * 100).toFixed(0);
+            html += '<div class="tr-ob-row tr-ob-bid"><span class="tr-ob-price" style="color:#22c55e">' + (o.price * 100).toFixed(1) + '¢</span><span class="tr-ob-size">' + o.size.toFixed(2) + '</span><span class="tr-ob-bar"><span style="width:' + pct + '%"></span></span></div>';
+        });
+        body.innerHTML = html;
+        if (summary) {
+            var totalAsks = asks.reduce(function(s, o) { return s + o.size; }, 0);
+            var totalBids = bids.reduce(function(s, o) { return s + o.size; }, 0);
+            summary.innerHTML = '<span>Asks: ' + totalAsks.toFixed(2) + '</span><span>Bids: ' + totalBids.toFixed(2) + '</span>';
+        }
     }
 
     function renderTradeWallets() {
@@ -4008,51 +4501,216 @@
 
     // ====================== CALLS ======================
     function initCallsTab() {
-        var content = $('calls-content');
-        if (!content || content.dataset.loaded) return;
-        content.dataset.loaded = '1';
         renderCalls();
+        if (window._callsInterval) clearInterval(window._callsInterval);
+        window._callsInterval = setInterval(renderCalls, 5000);
     }
 
     function renderCalls() {
-        var container = $('calls-content');
+        var container = document.getElementById('calls-list');
         if (!container) return;
         var calls = JSON.parse(localStorage.getItem('polyCalls') || '[]');
-        var html = '<div style="padding:12px">';
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
-        html += '<span style="font-size:14px;font-weight:800;color:var(--text)">Коллы (сигналы)</span>';
-        html += '<button id="addCallBtn" style="padding:8px 14px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:inherit">+ Новый колл</button>';
-        html += '</div>';
+        var filter = ((document.querySelector('.calls-filter-btn.active') || {}).dataset || {}).filter || 'all';
+        var now = Date.now();
+        var DAY_MS = 86400000;
+        var TTL = { wallet_call: 3 * DAY_MS, event_call: 5 * DAY_MS };
+        var tariffNames = { basic: '', pro: 'Immortal', apex: 'Warlord' };
+        var tariffColors = { basic: '', pro: '#a855f7', apex: '#eab308' };
 
-        if (calls.length === 0) {
-            html += '<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:12px"><p>Пока нет коллов. Создайте первый сигнал!</p></div>';
-        } else {
-            calls.forEach(function(call) {
-                html += '<div style="padding:14px;background:var(--card-bg-2);border:1px solid var(--border);border-radius:12px;margin-bottom:8px">';
-                html += '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px">' + escHtml(call.title || 'Без названия') + '</div>';
-                html += '<div style="font-size:11px;color:var(--text-secondary)">' + escHtml(call.description || '') + '</div>';
-                html += '<div style="margin-top:8px;font-size:10px;color:var(--text-tertiary)">' + getTimeAgo(call.createdAt) + '</div>';
-                html += '</div>';
-            });
+        var before = calls.length;
+        calls = calls.filter(function(c) { return now - c.timestamp < (TTL[c.type] || DAY_MS); });
+        if (calls.length !== before) localStorage.setItem('polyCalls', JSON.stringify(calls));
+
+        if (filter === 'event') calls = calls.filter(function(c) { return c.type === 'event_call'; });
+        else if (filter === 'wallet') calls = calls.filter(function(c) { return c.type === 'wallet_call'; });
+
+        if (!calls.length) {
+            container.innerHTML = '<div class="calls-empty"><svg viewBox="0 0 24 24" width="32" height="32"><path fill="currentColor" opacity="0.3" d="M5 8c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h2l4 4V6l-4 4H5zm12 4c0 1.5-.84 2.8-2.1 3.5l.6 1.1c1.6-.9 2.5-2.5 2.5-4.6s-.9-3.7-2.5-4.6l-.6 1.1c1.26.7 2.1 2 2.1 3.5z"/></svg><span>Сигналы пока не собирались.<br>Используйте 📣 рядом с анализом кошелька или события.</span></div>';
+            return;
         }
 
-        html += '</div>';
+        calls = calls.slice().reverse();
+        var html = '';
+        for (var i = 0; i < calls.length; i++) {
+            var c = calls[i];
+            var date = new Date(c.timestamp);
+            var dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            var label = c.type === 'wallet_call' ? 'Кошелёк' : 'Событие';
+            var detail = c.type === 'wallet_call' ? (c.address || '—') : (c.name || c.slug || '—');
+            var isWallet = c.type === 'wallet_call';
+            var author = c.author || 'Anonymous';
+            var initial = author.charAt(0).toUpperCase();
+            var tariff = c.tariff || 'basic';
+            var badgeName = tariffNames[tariff] || '';
+            var badgeColor = tariffColors[tariff] || '';
+            var badgeHtml = badgeName ? '<span class="calls-tariff-badge calls-tariff-' + tariff + '" style="--badge-color:' + badgeColor + '">' + badgeName + '</span>' : '';
+            var avatarColors = ['#4C7F6E','#a855f7','#eab308','#3b82f6','#ef4444','#22c55e'];
+            var avatarColor = avatarColors[Math.abs((author.charCodeAt(0) || 0)) % avatarColors.length];
+            var linkHtml = c.link ? '<a class="calls-link" href="' + escHtml(c.link) + '" target="_blank">' + escHtml(c.link) + '</a>' : '';
+            var reasonHtml = c.reason ? '<div class="calls-reason">' + escHtml(c.reason) + '</div>' : '';
+
+            var expiresIn = (TTL[c.type] || DAY_MS) - (now - c.timestamp);
+            var timerHtml = '<span class="calls-timer" data-expires="' + (c.timestamp + (TTL[c.type] || DAY_MS)) + '">'
+                + _formatCallTimer(Math.max(0, expiresIn))
+                + '</span>';
+
+            html += '<div class="calls-card">'
+                + '<div class="calls-card-top">'
+                    + '<div class="calls-card-author">'
+                        + '<div class="calls-avatar" style="background:' + avatarColor + '">' + initial + '</div>'
+                        + '<div class="calls-author-info">'
+                            + '<span class="calls-author-name">' + escHtml(author) + '</span>'
+                            + badgeHtml
+                        + '</div>'
+                    + '</div>'
+                    + '<div class="calls-card-right">'
+                        + '<span class="calls-type-badge calls-type-' + (isWallet ? 'wallet' : 'event') + '">' + label + '</span>'
+                    + '</div>'
+                + '</div>'
+                + '<div class="calls-card-body">'
+                    + '<div class="calls-detail">' + escHtml(detail) + '</div>'
+                    + linkHtml
+                    + reasonHtml
+                + '</div>'
+                + '<div class="calls-card-footer">'
+                    + '<span class="calls-time">' + dateStr + '</span>'
+                    + timerHtml
+                + '</div>'
+            + '</div>';
+        }
         container.innerHTML = html;
 
-        var addBtn = $('addCallBtn');
-        if (addBtn) {
-            addBtn.onclick = function() {
-                var title = prompt('Название колла:');
-                if (title) {
-                    var desc = prompt('Описание:') || '';
-                    var calls = JSON.parse(localStorage.getItem('polyCalls') || '[]');
-                    calls.unshift({ title: title, description: desc, createdAt: Date.now() });
-                    localStorage.setItem('polyCalls', JSON.stringify(calls));
-                    renderCalls();
-                }
-            };
+        if (container.querySelector('.calls-timer')) {
+            if (window._callsTimerUpdater) clearInterval(window._callsTimerUpdater);
+            window._callsTimerUpdater = setInterval(function() {
+                document.querySelectorAll('.calls-timer').forEach(function(el) {
+                    var exp = parseInt(el.dataset.expires);
+                    if (!exp) return;
+                    var left = Math.max(0, exp - Date.now());
+                    el.textContent = _formatCallTimer(left);
+                });
+            }, 1000);
+        } else {
+            if (window._callsTimerUpdater) { clearInterval(window._callsTimerUpdater); window._callsTimerUpdater = null; }
         }
     }
+
+    function _formatCallTimer(ms) {
+        var totalSec = Math.floor(ms / 1000);
+        var d = Math.floor(totalSec / 86400);
+        var h = Math.floor((totalSec % 86400) / 3600);
+        var m = Math.floor((totalSec % 3600) / 60);
+        var s = totalSec % 60;
+        if (d > 0) return d + 'д ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+        return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+    }
+
+    function showCallModal(type) {
+        var existing = document.querySelector('.call-modal-overlay');
+        if (existing) existing.remove();
+
+        var addr = '';
+        var title = '';
+        if (type === 'wallet' && currentStats) {
+            addr = currentStats.walletAddress || '';
+            title = 'Колл на кошелёк';
+        } else if (type === 'event') {
+            var slug = '';
+            title = 'Колл на событие';
+        }
+
+        var overlay = document.createElement('div');
+        overlay.className = 'call-modal-overlay';
+        overlay.innerHTML = ''
+            + '<div class="call-modal">'
+            + '  <div class="call-modal-header">'
+            + '    <div class="call-modal-title">'
+            + '      <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 8c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h2l4 4V6l-4 4H5zm12 4c0 1.5-.84 2.8-2.1 3.5l.6 1.1c1.6-.9 2.5-2.5 2.5-4.6s-.9-3.7-2.5-4.6l-.6 1.1c1.26.7 2.1 2 2.1 3.5z"/></svg>'
+            + '      ' + escHtml(title)
+            + '    </div>'
+            + '    <button class="call-modal-close" id="callModalClose">✕</button>'
+            + '  </div>'
+            + '  <div class="call-modal-body">'
+            + '    <div class="call-modal-field">'
+            + '      <label class="call-modal-label">' + (type === 'wallet' ? 'Адрес кошелька' : 'Slug события') + '</label>'
+            + '      <input class="call-modal-input" id="callModalAddr" type="text" value="' + escHtml(addr) + '" readonly>'
+            + '    </div>'
+            + '    <div class="call-modal-field">'
+            + '      <label class="call-modal-label">Почему рекомендую</label>'
+            + '      <textarea class="call-modal-textarea" id="callModalReason" placeholder="Напишите, почему рекомендуете этот ' + (type === 'wallet' ? 'кошелёк' : 'событие') + '..." rows="3"></textarea>'
+            + '    </div>'
+            + '  </div>'
+            + '  <div class="call-modal-footer">'
+            + '    <button class="call-modal-cancel" id="callModalCancel">Отмена</button>'
+            + '    <button class="call-modal-submit" id="callModalSubmit">Дать колл</button>'
+            + '  </div>'
+            + '</div>';
+
+        document.body.appendChild(overlay);
+
+        var closeModal = function() { overlay.remove(); };
+        document.getElementById('callModalClose').onclick = closeModal;
+        document.getElementById('callModalCancel').onclick = closeModal;
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) closeModal(); });
+        setTimeout(function() {
+            var ta = document.getElementById('callModalReason');
+            if (ta) ta.focus();
+        }, 100);
+
+        document.getElementById('callModalSubmit').onclick = function() {
+            var reason = (document.getElementById('callModalReason').value || '').trim();
+            var profile = JSON.parse(localStorage.getItem('polyProfile') || '{}');
+            var tariff = JSON.parse(localStorage.getItem('polyTariff') || '{"plan":"basic"}');
+            var auth = getFbAuthREST();
+            var authorName = (auth && auth.displayName) || profile.nick || 'Anonymous';
+            var callData = {
+                type: type === 'wallet' ? 'wallet_call' : 'event_call',
+                address: addr,
+                reason: reason,
+                timestamp: Date.now(),
+                author: authorName,
+                tariff: tariff.plan || 'basic'
+            };
+            var calls = JSON.parse(localStorage.getItem('polyCalls') || '[]');
+            calls.push(callData);
+            localStorage.setItem('polyCalls', JSON.stringify(calls));
+
+            var btnId = type === 'wallet' ? 'wa-call-btn' : 'ev-call-btn';
+            var btn = document.getElementById(btnId);
+            if (btn) {
+                btn.classList.add('call-saved');
+                setTimeout(function() { btn.classList.remove('call-saved'); }, 2000);
+            }
+            closeModal();
+        };
+    }
+
+    // Wire calls tab event handlers
+    document.addEventListener('click', function(e) {
+        var clearBtn = document.getElementById('calls-clear-btn');
+        if (clearBtn && (e.target === clearBtn || clearBtn.contains(e.target))) {
+            localStorage.removeItem('polyCalls');
+            renderCalls();
+            return;
+        }
+        var filterBtn = e.target.closest('.calls-filter-btn');
+        if (filterBtn) {
+            document.querySelectorAll('.calls-filter-btn').forEach(function(b) { b.classList.remove('active'); });
+            filterBtn.classList.add('active');
+            renderCalls();
+            return;
+        }
+        var waCallBtn = e.target.closest('#wa-call-btn');
+        if (waCallBtn) {
+            showCallModal('wallet');
+            return;
+        }
+        var evCallBtn = e.target.closest('#ev-call-btn');
+        if (evCallBtn) {
+            showCallModal('event');
+            return;
+        }
+    });
 
     // ====================== MY TRADES ======================
     function initMyTradesTab() {
@@ -5639,7 +6297,34 @@
     });
 
     // ====================== QUICK ACTIONS ======================
-    $('settingsQuickBtn').onclick = function() { switchTab('settings'); closeMenu(); };
+    $('settingsQuickBtn').onclick = function() {
+        var settingsTab = $('settings-tab');
+        var isSettingsActive = settingsTab && settingsTab.classList.contains('active');
+        if (isSettingsActive && _prevTabBeforeSettings) {
+            document.querySelectorAll('.menu-item').forEach(function(b) { b.classList.remove('active'); });
+            document.querySelectorAll('.nav-tab-content').forEach(function(c) { c.classList.remove('active'); });
+            var prevBtn = document.querySelector('.menu-item[data-tab="' + _prevTabBeforeSettings + '"]');
+            if (prevBtn) prevBtn.classList.add('active');
+            var prevContent = $(_prevTabBeforeSettings + '-tab');
+            if (prevContent) prevContent.classList.add('active');
+            _prevTabBeforeSettings = null;
+            closeMenu();
+            return;
+        }
+        var activeBtn = document.querySelector('.menu-item.active');
+        if (activeBtn && activeBtn.dataset.tab !== 'settings') {
+            _prevTabBeforeSettings = activeBtn.dataset.tab;
+        } else {
+            _prevTabBeforeSettings = 'wallet';
+        }
+        document.querySelectorAll('.menu-item').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('.nav-tab-content').forEach(function(c) { c.classList.remove('active'); });
+        var menuBtn = document.querySelector('.menu-item[data-tab="settings"]');
+        if (menuBtn) menuBtn.classList.add('active');
+        if (settingsTab) settingsTab.classList.add('active');
+        closeMenu();
+        initSettingsTab();
+    };
     $('themeToggle').onclick = toggleTheme;
 
     // ====================== AUTH UI ======================
