@@ -1430,7 +1430,7 @@ body.light-theme .tv-chart-section { border-color: #d0d7de; }
     margin-bottom: 12px;
     align-items: start;
 }
-.tt-whales-col { min-width: 0; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.tt-whales-col { min-width: 0; }
 .tt-chart-col { min-width: 0; }
 .tt-panel-col { min-width: 0; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
 @media (max-width: 900px) { .tt-panel-col { position: static; max-height: none; overflow-y: visible; } }
