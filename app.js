@@ -2251,10 +2251,6 @@
             +     '<div id="ttWhalesSection" class="wh-section" style="display:none"></div>'
             +   '</div>'
             +   '<div class="tt-chart-col">'
-            +     '<div class="tv-chart-section" id="ttChartSection" style="display:none">'
-            +       '<div class="tv-chart-container" id="tvTradeChart"></div>'
-            +       '<div class="tt-sym-bar" id="ttSymBar"></div>'
-            +     '</div>'
             +     '<div class="tt-market-section">'
             +       '<div class="tt-link-row">'
             +         '<div class="tt-link-input-wrap">'
@@ -2266,9 +2262,6 @@
             +       '<div id="ttLinkStatus" class="tt-link-status"></div>'
             +       '<div id="ttSelectedMarket"></div>'
             +     '</div>'
-            +   '</div>'
-            +   '<div class="tt-panel-col">'
-            +     renderTradeTerminal()
             +   '</div>'
             + '</div>'
             + '<div id="tradeWalletsSection"></div>';
@@ -2560,7 +2553,6 @@
             var markets = ev.markets || [];
 
             _selectedEvent = ev;
-            showChartForEvent(ev);
             loadEventWhales(ev);
 
             status.className = 'tt-link-status tt-link-ok';
@@ -3058,6 +3050,73 @@
         }
     }
 
+    function _detectCryptoAsset(title) {
+        var symbolMap = {
+            'BTC': ['BTC', 'BITCOIN', 'БИТКОИН', 'БИТКОЙН'],
+            'ETH': ['ETH', 'ETHEREUM', 'ЭФИРИУМ', 'ЕФІР'],
+            'SOL': ['SOL', 'SOLANA', 'СОЛАНА'],
+            'XRP': ['XRP', 'RIPPLE', 'РИПЛ'],
+            'BNB': ['BNB', 'BINANCE'],
+            'DOGE': ['DOGE', 'DOGECOIN', 'ДОЖД', 'ДОГЕ']
+        };
+        var upper = (title || '').toUpperCase();
+        for (var sym in symbolMap) {
+            var aliases = symbolMap[sym];
+            for (var ai = 0; ai < aliases.length; ai++) {
+                if (upper.indexOf(aliases[ai]) >= 0) return sym;
+            }
+        }
+        return null;
+    }
+
+    function _buildTVUrl(asset, interval) {
+        var sym = 'BINANCE:' + asset + 'USDT';
+        interval = interval || '5';
+        var isLight = document.body.classList.contains('light-theme');
+        var studies = JSON.stringify(['MASimple@tv-basicstudies','Volume@tv-basicstudies']);
+        var feats = JSON.stringify(['chart','side_toolbar','drawing_tools','chart_crosshair_menu','chart_multiple_instance','symbol_search','keep_info_panel_open','uppercase_in_symbols_search','delete_symbol_in_search']);
+        return 'https://s.tradingview.com/widgetembed/?symbol=' + encodeURIComponent(sym)
+            + '&interval=' + interval
+            + '&theme=' + (isLight ? 'light' : 'dark')
+            + '&style=' + (isLight ? '1' : '1')
+            + '&locale=en'
+            + '&hide_side_toolbar=0&symboledit=1&saveimage=0&allow_symbol_change=1'
+            + '&toolbarbg=' + encodeURIComponent(isLight ? '#f1f3f6' : '#1e222d')
+            + '&studies=' + encodeURIComponent(studies)
+            + '&timezone=exchange'
+            + '&enabled_features=' + encodeURIComponent(feats);
+    }
+
+    function _createTVChart(asset, interval) {
+        var container = document.getElementById('trChartContainer');
+        var emptyEl = document.getElementById('trChartEmpty');
+        if (!container) return;
+        if (emptyEl) emptyEl.style.display = 'none';
+        container.style.display = '';
+        container.innerHTML = '';
+        var iframe = document.createElement('iframe');
+        iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
+        iframe.setAttribute('allowfullscreen', 'true');
+        iframe.src = _buildTVUrl(asset, interval);
+        container.appendChild(iframe);
+    }
+
+    function _initCryptoChart(asset) {
+        var container = document.getElementById('trChartContainer');
+        var emptyEl = document.getElementById('trChartEmpty');
+        var section = document.getElementById('trChartSection');
+        if (!container) return;
+        if (section) section.style.display = '';
+        if (!asset) {
+            if (emptyEl) { emptyEl.style.display = ''; emptyEl.textContent = _termT('terminal.chart_empty') || 'Select chart source'; }
+            if (container) container.style.display = 'none';
+            return;
+        }
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (container) container.style.display = '';
+        _createTVChart(asset, '5');
+    }
+
     function _termT(key) {
         if (typeof settingsT === 'function') return settingsT(key);
         return key;
@@ -3103,6 +3162,7 @@
             + '<button class="tr-ev-btn ev-call-btn" id="trCallBtn" title="Предложить как колл (сигнал)"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M5 8c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h2l4 4V6l-4 4H5zm12 4c0 1.5-.84 2.8-2.1 3.5l.6 1.1c1.6-.9 2.5-2.5 2.5-4.6s-.9-3.7-2.5-4.6l-.6 1.1c1.26.7 2.1 2 2.1 3.5z"/></svg></button>'
             + '<button class="tr-ev-btn tr-agent-btn" id="trAIAgentBtn"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg><span>' + (t('terminal.ai_agent') || 'AI') + '</span></button>'
             + (ev && ev.description ? '<button class="tr-ev-btn tr-desc-btn" id="trDescToggle"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg><span>' + (t('terminal.description') || 'Описание') + '</span></button>' : '')
+            + (_detectCryptoAsset(question) ? '<button class="tr-ev-btn tr-chart-btn" id="trChartToggle"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg><span>' + (t('terminal.chart_title') || 'Chart') + '</span></button>' : '')
             + '</div>'
             + (ev && ev.description ? '<div class="tr-event-desc" id="trEventDesc" style="display:none">' + escHtml(ev.description) + '</div>' : '')
             + '</div>';
@@ -3767,6 +3827,49 @@
         var descEl = document.getElementById('trEventDesc');
         if (descBtn && descEl) {
             descBtn.onclick = function() { descEl.style.display = descEl.style.display === 'none' ? 'block' : 'none'; };
+        }
+
+        // Chart toggle
+        var chartToggle = document.getElementById('trChartToggle');
+        var chartSection = document.getElementById('trChartSection');
+        if (chartToggle && chartSection) {
+            chartToggle.onclick = function() {
+                var hidden = chartSection.style.display === 'none';
+                chartSection.style.display = hidden ? '' : 'none';
+                chartToggle.classList.toggle('active', hidden);
+                if (hidden) {
+                    var titleEl = document.querySelector('.tr-event-title');
+                    var title = titleEl ? titleEl.textContent : '';
+                    var asset = _detectCryptoAsset(title);
+                    if (asset) _initCryptoChart(asset);
+                }
+            };
+        }
+
+        // Chart source switching
+        var srcBar = document.querySelector('.tr-chart-source-bar');
+        if (srcBar) {
+            srcBar.addEventListener('click', function(e) {
+                var btn = e.target.closest('.tr-chart-src');
+                if (!btn) return;
+                srcBar.querySelectorAll('.tr-chart-src').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var container = document.getElementById('trChartContainer');
+                var emptyEl = document.getElementById('trChartEmpty');
+                if (container && emptyEl) {
+                    var src = btn.dataset.src;
+                    if (src === 'cl') {
+                        container.style.display = 'none';
+                        emptyEl.style.display = '';
+                        emptyEl.textContent = 'Chainlink: ' + (t('terminal.chart_empty') || 'No data');
+                    } else {
+                        var titleEl = document.querySelector('.tr-event-title');
+                        var title = titleEl ? titleEl.textContent : '';
+                        var asset = _detectCryptoAsset(title);
+                        if (asset) _createTVChart(asset, '5');
+                    }
+                }
+            });
         }
 
         // Markets collapse toggle
