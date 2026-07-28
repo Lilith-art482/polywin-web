@@ -4535,10 +4535,10 @@
             if (balEl && _termState === 'demo') balEl.textContent = '$' + fmtNum((_demoBalance || 0).toFixed(0));
         }, 2000);
 
-        // Poll order book every 3 seconds
+        // Poll order book every 1 second
         setInterval(function() {
             _updateOrderBook();
-        }, 3000);
+        }, 1000);
     }
 
     function _updateOrderBook() {
@@ -4568,7 +4568,7 @@
         var otherIdx = 1 - idx;
         if (tokenIds[otherIdx]) {
             var cached = _obCache[tokenIds[otherIdx]];
-            if (!cached || Date.now() - cached.ts > 5000) {
+            if (!cached || Date.now() - cached.ts > 2000) {
                 pageFetch(CLOB_API + '/book?token_id=' + String(tokenIds[otherIdx]) + '&_t=' + Date.now())
                     .then(function(t) { var d = JSON.parse(t); if (d) _obCache[tokenIds[otherIdx]] = { data: d, ts: Date.now() }; })
                     .catch(function() {});
@@ -4579,7 +4579,7 @@
     function _fetchAndRenderOb(tokenId) {
         if (!tokenId) return;
         var cached = _obCache[tokenId];
-        if (cached && Date.now() - cached.ts < 1000) {
+        if (cached && Date.now() - cached.ts < 500) {
             _renderOB(cached.data);
             return;
         }
