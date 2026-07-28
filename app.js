@@ -29,7 +29,6 @@
     const CORS_PROXY = '/api/proxy?url=';
 
     const POLY_API_PATTERNS = [
-        CLOB_API
     ];
 
     // ====================== FIREBASE CONFIG ======================
@@ -4565,7 +4564,7 @@
         if (tokenIds[otherIdx]) {
             var cached = _obCache[tokenIds[otherIdx]];
             if (!cached || Date.now() - cached.ts > 5000) {
-                pageFetch(CLOB_API + '/order-book/' + String(tokenIds[otherIdx]))
+                pageFetch(CLOB_API + '/book?token_id=' + String(tokenIds[otherIdx]) + '&_t=' + Date.now())
                     .then(function(t) { var d = JSON.parse(t); if (d) _obCache[tokenIds[otherIdx]] = { data: d, ts: Date.now() }; })
                     .catch(function() {});
             }
@@ -4579,7 +4578,7 @@
             _renderOB(cached.data);
             return;
         }
-        pageFetch(CLOB_API + '/order-book/' + tokenId)
+        pageFetch(CLOB_API + '/book?token_id=' + tokenId + '&_t=' + Date.now())
             .then(function(text) {
                 var data = JSON.parse(text);
                 if (data) {
