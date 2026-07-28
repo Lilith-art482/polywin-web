@@ -2943,7 +2943,6 @@
     var _obCache = {};
     var _obLiveWs = null;
     var _obLiveWsPing = null;
-    var _obLastWsTime = 0;
     var _obLastPrev = null;
     var _termOrderInited = false;
     var _liveBalance = 0;
@@ -4547,7 +4546,7 @@
     function _obConnectLiveWs(tokenId) {
         if (_obLiveWs && _obLiveWs.readyState === WebSocket.OPEN) {
             if (_obLiveWs._subId !== tokenId) {
-                _obLiveWs.send(JSON.stringify({ assets_ids: [tokenId], type: 'market', custom_feature_enabled: true }));
+                _obLiveWs.send(JSON.stringify({ assets_ids: [tokenId], type: 'market' }));
                 _obLiveWs._subId = tokenId;
             }
             return;
@@ -4558,7 +4557,7 @@
             var ct = setTimeout(function() { if (ws && ws.readyState !== WebSocket.OPEN) try { ws.close(); } catch(e) {} }, 8000);
             ws.onopen = function() {
                 clearTimeout(ct);
-                ws.send(JSON.stringify({ assets_ids: [tokenId], type: 'market', custom_feature_enabled: true }));
+                ws.send(JSON.stringify({ assets_ids: [tokenId], type: 'market' }));
                 ws._subId = tokenId;
                 if (_obLiveWsPing) clearInterval(_obLiveWsPing);
                 _obLiveWsPing = setInterval(function() { if (ws.readyState === WebSocket.OPEN) ws.send('{}'); }, 10000);
@@ -4573,8 +4572,7 @@
                         var aid = msg.asset_id || msg.id; if (!aid) continue;
                         var et = msg.event_type || msg.type || '';
                         if ((et === 'book' || et === 'book_snapshot') && Array.isArray(msg.bids) && Array.isArray(msg.asks)) {
-                            if (!window.__wsBookCache) window.__wsBookCache = {};
-                            window.__wsBookCache[String(aid)] = { data: { bids: msg.bids, asks: msg.asks }, ts: Date.now() };
+                            _obCache[String(aid)] = { data: { bids: msg.bids, asks: msg.asks }, ts: Date.now() };
                         }
                     }
                 } catch(e) {}
@@ -4593,20 +4591,19 @@
     }
 
     function _updateOrderBook() {
-        if (!_termSelectedOutcome) { _obDisconnectLiveWs(); return; }
+        if (!_termSelectedOutcome) return;
         var obSection = document.getElementById('trObSection');
         if (obSection) obSection.style.display = '';
         var market = _termMarket;
         if (!market) return;
-        // Check if resolved/closed
         var bodyEl = document.getElementById('trObBody');
         if (market.resolved) {
             if (bodyEl) bodyEl.innerHTML = '<div class="tr-ob-empty">\u2714 \u0420\u044b\u043d\u043e\u043a \u0440\u0430\u0437\u0440\u0435\u0448\u0451\u043d</div>';
-            _obDisconnectLiveWs(); _updateDepthDisplay(null); return;
+            _obDisconnectLiveWs(); return;
         }
         if (market.closed) {
             if (bodyEl) bodyEl.innerHTML = '<div class="tr-ob-empty">\uD83D\uDD12 \u0420\u044b\u043d\u043e\u043a \u0437\u0430\u043a\u0440\u044b\u0442</div>';
-            _obDisconnectLiveWs(); _updateDepthDisplay(null); return;
+            _obDisconnectLiveWs(); return;
         }
         var idx = _termSelectedOutcome.index;
         var tokenIds = market.tokenIds || market.clobTokenIds;
@@ -4629,41 +4626,24 @@
         var tokenId = String(tokenIds[idx]);
         _obConnectLiveWs(tokenId);
 
-        // Try WebSocket cache first
-        var wsCache = window.__wsBookCache || {};
-        var wsEntry = wsCache[tokenId];
-        if (wsEntry && Date.now() - wsEntry.ts < 3000) {
-            _obLastWsTime = Date.now();
-            _obCache[tokenId] = { data: wsEntry.data, ts: Date.now() };
-            _renderOrderBook(wsEntry.data);
-            delete wsCache[tokenId];
+        var cached = _obCache[tokenId];
+        if (cached && Date.now() - cached.ts < 1500) {
+            _renderOrderBook(cached.data);
         } else {
-            var cached = _obCache[tokenId];
-            if (cached && Date.now() - cached.ts < 10000) {
-                _renderOrderBook(cached.data);
-            }
-            if ((!cached || Date.now() - _obLastWsTime > 5000) && (!cached || Date.now() - cached.ts > 3000)) {
-                _fetchOrderBook(tokenId).then(function(book) {
-                    if (!book) return;
-                    _obCache[tokenId] = { data: book, ts: Date.now() };
-                    _renderOrderBook(book);
-                }).catch(function() {});
-            }
+            _fetchOrderBook(tokenId).then(function(book) {
+                if (!book) return;
+                _obCache[tokenId] = { data: book, ts: Date.now() };
+                _renderOrderBook(book);
+            }).catch(function() {});
         }
         // Cache the other outcome for depth display
         var otherIdx = 1 - idx;
         if (tokenIds[otherIdx]) {
-            var otherWsEntry = wsCache[tokenIds[otherIdx]];
-            if (otherWsEntry && Date.now() - otherWsEntry.ts < 3000) {
-                _obCache[tokenIds[otherIdx]] = { data: otherWsEntry.data, ts: Date.now() };
-                delete wsCache[tokenIds[otherIdx]];
-            } else {
-                var otherCached = _obCache[tokenIds[otherIdx]];
-                if (!otherCached || Date.now() - otherCached.ts > 5000) {
-                    _fetchOrderBook(String(tokenIds[otherIdx])).then(function(book) {
-                        if (book) _obCache[tokenIds[otherIdx]] = { data: book, ts: Date.now() };
-                    }).catch(function() {});
-                }
+            var otherCached = _obCache[tokenIds[otherIdx]];
+            if (!otherCached || Date.now() - otherCached.ts > 5000) {
+                _fetchOrderBook(String(tokenIds[otherIdx])).then(function(book) {
+                    if (book) _obCache[tokenIds[otherIdx]] = { data: book, ts: Date.now() };
+                }).catch(function() {});
             }
         }
         _updateDepthDisplay(null);
@@ -4674,11 +4654,7 @@
         return pageFetch(CLOB_API + '/book?token_id=' + tokenId + '&_t=' + Date.now())
             .then(function(text) {
                 var data = JSON.parse(text);
-                if (data && data.bids && data.asks) {
-                    if (!window.__wsBookCache) window.__wsBookCache = {};
-                    window.__wsBookCache[tokenId] = { data: { bids: data.bids, asks: data.asks }, ts: Date.now() };
-                }
-                return data;
+                return data && data.bids && data.asks ? data : null;
             }).catch(function() { return null; });
     }
 
@@ -4815,7 +4791,6 @@
     function _fmtLiq(v) { if (v >= 1000) return (v/1000).toFixed(1)+'k'; return v.toFixed(0); }
 
     function _updateTokenOb(tokenId) {
-        _obConnectLiveWs(tokenId);
         _fetchOrderBook(tokenId).then(function(book) {
             if (book) { _obCache[tokenId] = { data: book, ts: Date.now() }; _renderOrderBook(book); }
         });
