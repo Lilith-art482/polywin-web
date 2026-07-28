@@ -4543,6 +4543,7 @@
         if (obSection) obSection.style.display = '';
         var idx = _termSelectedOutcome.index;
         var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
+        if (typeof tokenIds === 'string') { try { tokenIds = JSON.parse(tokenIds); } catch(e) {} }
         if (!tokenIds || !tokenIds[idx]) {
             var marketId = _termMarket.id;
             if (!marketId) return;
@@ -4550,20 +4551,21 @@
             pageFetch(url).then(function(text) {
                 var data = JSON.parse(text);
                 var tid = data && (data.clobTokenIds || data.tokenIds);
-                if (tid) {
+                if (typeof tid === 'string') { try { tid = JSON.parse(tid); } catch(e) {} }
+                if (tid && tid[idx]) {
                     _termMarket.clobTokenIds = tid;
-                    _fetchAndRenderOb(tid[idx]);
+                    _fetchAndRenderOb(String(tid[idx]));
                 }
             }).catch(function() {});
             return;
         }
-        _fetchAndRenderOb(tokenIds[idx]);
+        _fetchAndRenderOb(String(tokenIds[idx]));
 
         var otherIdx = 1 - idx;
         if (tokenIds[otherIdx]) {
             var cached = _obCache[tokenIds[otherIdx]];
             if (!cached || Date.now() - cached.ts > 5000) {
-                pageFetch(CLOB_API + '/order-book/' + tokenIds[otherIdx])
+                pageFetch(CLOB_API + '/order-book/' + String(tokenIds[otherIdx]))
                     .then(function(t) { var d = JSON.parse(t); if (d) _obCache[tokenIds[otherIdx]] = { data: d, ts: Date.now() }; })
                     .catch(function() {});
             }
