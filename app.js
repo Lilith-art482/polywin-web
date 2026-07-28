@@ -4503,9 +4503,10 @@
     function _startTermPriceRefresh() {
         if (_termPriceInterval) clearInterval(_termPriceInterval);
         _termPriceInterval = setInterval(function() {
-            if (!_termMarket) return;
+            if (!_termMarket) { console.log('DEBUG: no _termMarket'); return; }
             var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
-            if (!marketId) return;
+            if (!marketId) { console.log('DEBUG: no marketId', _termMarket.conditionId, _termMarket.id); return; }
+            console.log('DEBUG: fetching prices for', marketId);
             pageFetch(GAMMA_API + '/markets?condition_id=' + encodeURIComponent(marketId))
                 .then(function(text) {
                     var data = JSON.parse(text);
@@ -4538,7 +4539,8 @@
     }
 
     function _updateOrderBook() {
-        if (!_termSelectedOutcome || !_termMarket) return;
+        if (!_termSelectedOutcome || !_termMarket) { console.log('DEBUG: _updateOrderBook skipped', !!_termSelectedOutcome, !!_termMarket); return; }
+        console.log('DEBUG: _updateOrderBook called');
         var obSection = document.getElementById('trObSection');
         if (obSection) obSection.style.display = '';
         var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
