@@ -2982,6 +2982,7 @@
         // Сбрасываем tokenIds — они могут быть невалидными из кэша
         delete _termMarket.tokenIds;
         delete _termMarket.clobTokenIds;
+        console.log('DEBUG_OB: cleaned tokenIds from _termMarket');
         _renderTerminalPanel();
     }
 
@@ -4544,12 +4545,14 @@
         var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
         var idx = _termSelectedOutcome.index;
         var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
+        console.log('DEBUG_OB: tokenIds', tokenIds, 'idx', idx);
         if (!tokenIds || !tokenIds[idx]) {
             var url = GAMMA_API + '/markets?condition_id=' + encodeURIComponent(marketId);
             pageFetch(url).then(function(text) {
                 var arr = JSON.parse(text);
                 var data = Array.isArray(arr) ? arr[0] : arr;
-                var tid = data && data.clobTokenIds;
+                console.log('DEBUG_OB: gamma data', data);
+                var tid = data && (data.clobTokenIds || data.tokenIds);
                 if (tid) {
                     _termMarket.clobTokenIds = tid;
                     _fetchAndRenderOb(tid[idx]);
