@@ -4503,13 +4503,12 @@
     function _startTermPriceRefresh() {
         if (_termPriceInterval) clearInterval(_termPriceInterval);
         _termPriceInterval = setInterval(function() {
-            if (!_termMarket) { console.log('DEBUG: no _termMarket'); return; }
+            if (!_termMarket) return;
             var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
-            if (!marketId) { console.log('DEBUG: no marketId', _termMarket.conditionId, _termMarket.id); return; }
-            console.log('DEBUG: fetching prices for', marketId);
             pageFetch(GAMMA_API + '/markets?condition_id=' + encodeURIComponent(marketId))
                 .then(function(text) {
-                    var data = JSON.parse(text);
+                    var arr = JSON.parse(text);
+                    var data = Array.isArray(arr) ? arr[0] : arr;
                     if (data && data.outcomePrices) {
                         _termMarket.outcomePrices = data.outcomePrices;
                         var prices = JSON.parse(data.outcomePrices);
@@ -4539,36 +4538,32 @@
     }
 
     function _updateOrderBook() {
-        if (!_termSelectedOutcome || !_termMarket) { console.log('DEBUG: _updateOrderBook skipped', !!_termSelectedOutcome, !!_termMarket); return; }
-        console.log('DEBUG: _updateOrderBook called');
+        if (!_termSelectedOutcome || !_termMarket) return;
         var obSection = document.getElementById('trObSection');
         if (obSection) obSection.style.display = '';
         var marketId = (_termMarket.conditionId || _termMarket.id || '').replace(/^0x/, '');
         var idx = _termSelectedOutcome.index;
         var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
         if (!tokenIds || !tokenIds[idx]) {
-            // Try to fetch token IDs from gamma
             var url = GAMMA_API + '/markets?condition_id=' + encodeURIComponent(marketId);
             pageFetch(url).then(function(text) {
-                var data = JSON.parse(text);
-                console.log('DEBUG: gamma response', data);
+                var arr = JSON.parse(text);
+                var data = Array.isArray(arr) ? arr[0] : arr;
                 var tid = data && data.clobTokenIds;
-                console.log('DEBUG: clobTokenIds', tid);
                 if (tid) {
                     _termMarket.clobTokenIds = tid;
                     _fetchAndRenderOb(tid[idx]);
                 }
-            }).catch(function(e) { console.log('DEBUG: gamma error', e); });
+            }).catch(function() {});
             return;
         }
         _fetchAndRenderOb(tokenIds[idx]);
 
-        // Also prefetch the other outcome
         var otherIdx = 1 - idx;
         if (tokenIds[otherIdx]) {
             var cached = _obCache[tokenIds[otherIdx]];
             if (!cached || Date.now() - cached.ts > 5000) {
-                pageFetch(CLOB_API + '/book?token_id=' + tokenIds[otherIdx])
+                pageFetch(CLOB_API + '/order-book/' + tokenIds[otherIdx])
                     .then(function(t) { var d = JSON.parse(t); if (d) _obCache[tokenIds[otherIdx]] = { data: d, ts: Date.now() }; })
                     .catch(function() {});
             }
@@ -4582,7 +4577,7 @@
             _renderOB(cached.data);
             return;
         }
-        pageFetch(CLOB_API + '/book?token_id=' + tokenId)
+        pageFetch(CLOB_API + '/order-book/' + tokenId)
             .then(function(text) {
                 var data = JSON.parse(text);
                 if (data) {
