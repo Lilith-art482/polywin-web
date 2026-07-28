@@ -2941,6 +2941,10 @@
     var _termState = 'demo';
     var _termPriceInterval = null;
     var _obCache = {};
+    var _obLiveWs = null;
+    var _obLiveWsPing = null;
+    var _obLastWsTime = 0;
+    var _obLastPrev = null;
     var _termOrderInited = false;
     var _liveBalance = 0;
     var _liveAllowance = 0;
@@ -4535,21 +4539,80 @@
             if (balEl && _termState === 'demo') balEl.textContent = '$' + fmtNum((_demoBalance || 0).toFixed(0));
         }, 2000);
 
-        // Poll order book every 1 second
         setInterval(function() {
             _updateOrderBook();
         }, 1000);
     }
 
+    function _obConnectLiveWs(tokenId) {
+        if (_obLiveWs && _obLiveWs.readyState === WebSocket.OPEN) {
+            if (_obLiveWs._subId !== tokenId) {
+                _obLiveWs.send(JSON.stringify({ assets_ids: [tokenId], type: 'market', custom_feature_enabled: true }));
+                _obLiveWs._subId = tokenId;
+            }
+            return;
+        }
+        if (_obLiveWs) { try { _obLiveWs.close(); } catch(e) {} _obLiveWs = null; }
+        try {
+            var ws = new WebSocket('wss://ws-subscriptions-clob.polymarket.com/ws/market');
+            var ct = setTimeout(function() { if (ws && ws.readyState !== WebSocket.OPEN) try { ws.close(); } catch(e) {} }, 8000);
+            ws.onopen = function() {
+                clearTimeout(ct);
+                ws.send(JSON.stringify({ assets_ids: [tokenId], type: 'market', custom_feature_enabled: true }));
+                ws._subId = tokenId;
+                if (_obLiveWsPing) clearInterval(_obLiveWsPing);
+                _obLiveWsPing = setInterval(function() { if (ws.readyState === WebSocket.OPEN) ws.send('{}'); }, 10000);
+            };
+            ws.onmessage = function(evt) {
+                if (evt.data === 'PONG' || evt.data === '{}') return;
+                try {
+                    var msgs = JSON.parse(evt.data); if (!msgs) return;
+                    var list = Array.isArray(msgs) ? msgs : [msgs];
+                    for (var mi = 0; mi < list.length; mi++) {
+                        var msg = list[mi]; if (!msg) continue;
+                        var aid = msg.asset_id || msg.id; if (!aid) continue;
+                        var et = msg.event_type || msg.type || '';
+                        if ((et === 'book' || et === 'book_snapshot') && Array.isArray(msg.bids) && Array.isArray(msg.asks)) {
+                            if (!window.__wsBookCache) window.__wsBookCache = {};
+                            window.__wsBookCache[String(aid)] = { data: { bids: msg.bids, asks: msg.asks }, ts: Date.now() };
+                        }
+                    }
+                } catch(e) {}
+            };
+            ws.onclose = function() {
+                if (_obLiveWsPing) { clearInterval(_obLiveWsPing); _obLiveWsPing = null; }
+                if (_obLiveWs === ws) _obLiveWs = null;
+            };
+            ws.onerror = function() {};
+            _obLiveWs = ws;
+        } catch(e) {}
+    }
+    function _obDisconnectLiveWs() {
+        if (_obLiveWsPing) { clearInterval(_obLiveWsPing); _obLiveWsPing = null; }
+        if (_obLiveWs) { try { _obLiveWs.close(); } catch(e) {} _obLiveWs = null; }
+    }
+
     function _updateOrderBook() {
-        if (!_termSelectedOutcome || !_termMarket) return;
+        if (!_termSelectedOutcome) { _obDisconnectLiveWs(); return; }
         var obSection = document.getElementById('trObSection');
         if (obSection) obSection.style.display = '';
+        var market = _termMarket;
+        if (!market) return;
+        // Check if resolved/closed
+        var bodyEl = document.getElementById('trObBody');
+        if (market.resolved) {
+            if (bodyEl) bodyEl.innerHTML = '<div class="tr-ob-empty">\u2714 \u0420\u044b\u043d\u043e\u043a \u0440\u0430\u0437\u0440\u0435\u0448\u0451\u043d</div>';
+            _obDisconnectLiveWs(); _updateDepthDisplay(null); return;
+        }
+        if (market.closed) {
+            if (bodyEl) bodyEl.innerHTML = '<div class="tr-ob-empty">\uD83D\uDD12 \u0420\u044b\u043d\u043e\u043a \u0437\u0430\u043a\u0440\u044b\u0442</div>';
+            _obDisconnectLiveWs(); _updateDepthDisplay(null); return;
+        }
         var idx = _termSelectedOutcome.index;
-        var tokenIds = _termMarket.tokenIds || _termMarket.clobTokenIds;
+        var tokenIds = market.tokenIds || market.clobTokenIds;
         if (typeof tokenIds === 'string') { try { tokenIds = JSON.parse(tokenIds); } catch(e) {} }
         if (!tokenIds || !tokenIds[idx]) {
-            var marketId = _termMarket.id;
+            var marketId = market.id;
             if (!marketId) return;
             var url = GAMMA_API + '/markets/' + encodeURIComponent(marketId);
             pageFetch(url).then(function(text) {
@@ -4557,100 +4620,217 @@
                 var tid = data && (data.clobTokenIds || data.tokenIds);
                 if (typeof tid === 'string') { try { tid = JSON.parse(tid); } catch(e) {} }
                 if (tid && tid[idx]) {
-                    _termMarket.clobTokenIds = tid;
-                    _fetchAndRenderOb(String(tid[idx]));
+                    market.clobTokenIds = tid;
+                    _updateTokenOb(String(tid[idx]));
                 }
             }).catch(function() {});
             return;
         }
-        _fetchAndRenderOb(String(tokenIds[idx]));
+        var tokenId = String(tokenIds[idx]);
+        _obConnectLiveWs(tokenId);
 
-        var otherIdx = 1 - idx;
-        if (tokenIds[otherIdx]) {
-            var cached = _obCache[tokenIds[otherIdx]];
-            if (!cached || Date.now() - cached.ts > 2000) {
-                pageFetch(CLOB_API + '/book?token_id=' + String(tokenIds[otherIdx]) + '&_t=' + Date.now())
-                    .then(function(t) { var d = JSON.parse(t); if (d) _obCache[tokenIds[otherIdx]] = { data: d, ts: Date.now() }; })
-                    .catch(function() {});
+        // Try WebSocket cache first
+        var wsCache = window.__wsBookCache || {};
+        var wsEntry = wsCache[tokenId];
+        if (wsEntry && Date.now() - wsEntry.ts < 3000) {
+            _obLastWsTime = Date.now();
+            _obCache[tokenId] = { data: wsEntry.data, ts: Date.now() };
+            _renderOrderBook(wsEntry.data);
+            delete wsCache[tokenId];
+        } else {
+            var cached = _obCache[tokenId];
+            if (cached && Date.now() - cached.ts < 10000) {
+                _renderOrderBook(cached.data);
+            }
+            if ((!cached || Date.now() - _obLastWsTime > 5000) && (!cached || Date.now() - cached.ts > 3000)) {
+                _fetchOrderBook(tokenId).then(function(book) {
+                    if (!book) return;
+                    _obCache[tokenId] = { data: book, ts: Date.now() };
+                    _renderOrderBook(book);
+                }).catch(function() {});
             }
         }
+        // Cache the other outcome for depth display
+        var otherIdx = 1 - idx;
+        if (tokenIds[otherIdx]) {
+            var otherWsEntry = wsCache[tokenIds[otherIdx]];
+            if (otherWsEntry && Date.now() - otherWsEntry.ts < 3000) {
+                _obCache[tokenIds[otherIdx]] = { data: otherWsEntry.data, ts: Date.now() };
+                delete wsCache[tokenIds[otherIdx]];
+            } else {
+                var otherCached = _obCache[tokenIds[otherIdx]];
+                if (!otherCached || Date.now() - otherCached.ts > 5000) {
+                    _fetchOrderBook(String(tokenIds[otherIdx])).then(function(book) {
+                        if (book) _obCache[tokenIds[otherIdx]] = { data: book, ts: Date.now() };
+                    }).catch(function() {});
+                }
+            }
+        }
+        _updateDepthDisplay(null);
     }
 
-    function _fetchAndRenderOb(tokenId) {
-        if (!tokenId) return;
-        var cached = _obCache[tokenId];
-        if (cached && Date.now() - cached.ts < 500) {
-            _renderOB(cached.data);
-            return;
-        }
-        pageFetch(CLOB_API + '/book?token_id=' + tokenId + '&_t=' + Date.now())
+    function _fetchOrderBook(tokenId) {
+        if (!tokenId) return Promise.resolve(null);
+        return pageFetch(CLOB_API + '/book?token_id=' + tokenId + '&_t=' + Date.now())
             .then(function(text) {
                 var data = JSON.parse(text);
-                if (data) {
-                    _obCache[tokenId] = { data: data, ts: Date.now() };
-                    _renderOB(data);
+                if (data && data.bids && data.asks) {
+                    if (!window.__wsBookCache) window.__wsBookCache = {};
+                    window.__wsBookCache[tokenId] = { data: { bids: data.bids, asks: data.asks }, ts: Date.now() };
                 }
-            })
-            .catch(function() {});
+                return data;
+            }).catch(function() { return null; });
     }
 
-    function _renderOB(book) {
-        if (!book) return;
+    function _renderOrderBook(book) {
         var body = document.getElementById('trObBody');
+        var refresh = document.getElementById('trObRefresh');
         if (!body) return;
+        if (!book || !book.bids || !book.asks) {
+            body.innerHTML = '<div class="tr-ob-empty">Выберите исход</div>';
+            return;
+        }
+        function norm(entry) {
+            if (Array.isArray(entry)) return { price: parseFloat(entry[0]), size: parseFloat(entry[1]) };
+            return { price: parseFloat(entry.price), size: parseFloat(entry.size) };
+        }
+        var rawBids = book.bids || [];
+        var rawAsks = book.asks || [];
+        var bids = rawBids.map(norm).filter(function(e) { return !isNaN(e.price) && !isNaN(e.size); });
+        var asks = rawAsks.map(norm).filter(function(e) { return !isNaN(e.price) && !isNaN(e.size); });
+        asks.sort(function(a, b) { return b.price - a.price; });
+        bids.sort(function(a, b) { return b.price - a.price; });
 
-        var asks = (book.asks || []).slice(0, 10);
-        var bids = (book.bids || []).slice(0, 10);
-        var norm = function(o) { return Array.isArray(o) ? { price: parseFloat(o[0]), size: parseFloat(o[1]) } : { price: parseFloat(o.price || 0), size: parseFloat(o.size || 0) }; };
-        asks = asks.map(norm).sort(function(a, b) { return b.price - a.price; });
-        bids = bids.map(norm).sort(function(a, b) { return b.price - a.price; });
+        var bestBid = bids.length > 0 ? bids[0].price : null;
+        var bestAsk = asks.length > 0 ? asks[asks.length - 1].price : null;
+        var lastPrice = book.last_trade_price ? parseFloat(book.last_trade_price) : null;
+        var spread = (bestBid !== null && bestAsk !== null) ? (bestAsk - bestBid) : null;
+        var spreadPct = (spread !== null && bestBid !== null && bestBid > 0) ? (spread / bestBid * 100) : null;
+        var mid = (bestBid !== null && bestAsk !== null) ? ((bestBid + bestAsk) / 2) : null;
 
-        var maxAsk = asks.length > 0 ? Math.max.apply(null, asks.map(function(o) { return o.size; })) : 1;
-        var maxBid = bids.length > 0 ? Math.max.apply(null, bids.map(function(o) { return o.size; })) : 1;
-        var maxTotal = Math.max(
-            asks.reduce(function(s, o, i, arr) { return s + o.size; }, 0),
-            bids.reduce(function(s, o, i, arr) { return s + o.size; }, 0)
-        ) || 1;
+        var maxCum = 1;
+        for (var ai = 0; ai < asks.length; ai++) {
+            var cum = asks[ai].size;
+            for (var aj = ai + 1; aj < asks.length; aj++) { cum += asks[aj].size; }
+            maxCum = Math.max(maxCum, cum);
+        }
+        for (var bi = 0; bi < bids.length; bi++) {
+            var cum = bids[bi].size;
+            for (var bj = bi + 1; bj < bids.length; bj++) { cum += bids[bj].size; }
+            maxCum = Math.max(maxCum, cum);
+        }
 
-        var html = '';
-        // Asks (top to bottom: highest to lowest)
-        var cumAsk = 0;
-        asks.forEach(function(o) {
-            cumAsk += o.size;
-            var pct = (o.size / maxAsk * 100).toFixed(0);
-            var cumPct = (cumAsk / maxTotal * 100).toFixed(0);
-            html += '<div class="tr-ob-row ask">'
-                + '<span class="tr-ob-price" style="color:#ef4444">' + (o.price * 100).toFixed(2) + '</span>'
-                + '<span class="tr-ob-size">' + o.size.toFixed(2) + '</span>'
-                + '<span class="tr-ob-total">' + cumAsk.toFixed(2) + '</span>'
-                + '<span class="tr-ob-bar" style="width:' + cumPct + '%;background:rgba(239,68,68,0.12)"></span>'
+        var lastDir = _obLastPrev !== null && lastPrice !== null ? (lastPrice > _obLastPrev ? 'up' : lastPrice < _obLastPrev ? 'down' : 'flat') : 'flat';
+        if (lastPrice !== null) _obLastPrev = lastPrice;
+
+        var html = '<div class="tr-ob-section asks">';
+        for (var ai = 0; ai < asks.length; ai++) {
+            var a = asks[ai];
+            var p = a.price;
+            var s = a.size;
+            var cum = s;
+            for (var aj = ai + 1; aj < asks.length; aj++) { cum += asks[aj].size; }
+            var pct = Math.min(cum / maxCum * 100, 100);
+            var isNear = bestAsk !== null && Math.abs(p - bestAsk) < 0.0001;
+            html += '<div class="tr-ob-row ask' + (isNear ? ' near' : '') + '" data-price="' + p + '" data-size="' + s + '">'
+                + '<span class="tr-ob-bar" style="width:' + pct + '%"></span>'
+                + '<span class="tr-ob-price">' + (p * 100).toFixed(1) + '\u00a2</span>'
+                + '<span class="tr-ob-size">' + s.toFixed(2) + '</span>'
+                + '<span class="tr-ob-total">' + cum.toFixed(2) + '</span>'
                 + '</div>';
-        });
+        }
+        html += '</div>';
 
-        // Spread
-        var bestAsk = asks.length > 0 ? asks[asks.length - 1] : null;
-        var bestBid = bids.length > 0 ? bids[0] : null;
-        var lastPrice = bestAsk && bestBid ? ((bestAsk.price + bestBid.price) / 2) : (bestAsk ? bestAsk.price : (bestBid ? bestBid.price : 0));
-        var spread = bestAsk && bestBid ? ((bestAsk.price - bestBid.price) * 100).toFixed(2) : '\u2014';
-        html += '<div class="tr-ob-spread' + (spread !== '\u2014' ? (parseFloat(spread) >= 0 ? ' up' : ' down') : '') + '">'
-            + '<span>Spread: ' + spread + '\u00a2</span>'
-            + '<span>Last: ' + (lastPrice * 100).toFixed(2) + '\u00a2</span>'
-            + '</div>';
+        html += '<div class="tr-ob-spread' + (lastDir !== 'flat' ? ' ' + lastDir : '') + '">';
+        if (lastPrice !== null) {
+            html += '<span class="tr-ob-last' + (lastPrice >= (mid||0) ? ' bid' : ' ask') + '">' + (lastPrice*100).toFixed(1) + '\u00a2</span>';
+        }
+        if (spread !== null) {
+            html += '<span class="tr-ob-spread-val">' + (spread*100).toFixed(2) + '\u00a2</span>'
+                + (spreadPct !== null ? '<span class="tr-ob-spread-pct">(' + spreadPct.toFixed(2) + '%)</span>' : '');
+        }
+        html += '</div>';
 
-        // Bids (top to bottom: highest to lowest)
-        var cumBid = 0;
-        bids.forEach(function(o) {
-            cumBid += o.size;
-            var pct = (o.size / maxBid * 100).toFixed(0);
-            var cumPct = (cumBid / maxTotal * 100).toFixed(0);
-            html += '<div class="tr-ob-row bid">'
-                + '<span class="tr-ob-price" style="color:#22c55e">' + (o.price * 100).toFixed(2) + '</span>'
-                + '<span class="tr-ob-size">' + o.size.toFixed(2) + '</span>'
-                + '<span class="tr-ob-total">' + cumBid.toFixed(2) + '</span>'
-                + '<span class="tr-ob-bar" style="width:' + cumPct + '%;background:rgba(34,197,94,0.12)"></span>'
+        html += '<div class="tr-ob-section bids">';
+        for (var bi = 0; bi < bids.length; bi++) {
+            var b = bids[bi];
+            var p = b.price;
+            var s = b.size;
+            var cum = s;
+            for (var bj = bi + 1; bj < bids.length; bj++) { cum += bids[bj].size; }
+            var pct = Math.min(cum / maxCum * 100, 100);
+            var isNear = bestBid !== null && Math.abs(p - bestBid) < 0.0001;
+            html += '<div class="tr-ob-row bid' + (isNear ? ' near' : '') + '" data-price="' + p + '" data-size="' + s + '">'
+                + '<span class="tr-ob-bar" style="width:' + pct + '%"></span>'
+                + '<span class="tr-ob-price">' + (p * 100).toFixed(1) + '\u00a2</span>'
+                + '<span class="tr-ob-size">' + s.toFixed(2) + '</span>'
+                + '<span class="tr-ob-total">' + cum.toFixed(2) + '</span>'
                 + '</div>';
-        });
+        }
+        html += '</div>';
+
         body.innerHTML = html;
+        if (refresh) refresh.textContent = '\u27f3 ' + new Date().toLocaleTimeString();
+        _updateDepthDisplay(book);
+    }
+
+    function _updateDepthDisplay(book) {
+        if (!_termMarket) return;
+        var market = _termMarket;
+        var upFill = document.getElementById('trUpBarFill');
+        var downFill = document.getElementById('trDownBarFill');
+        var upPrice = document.getElementById('trUpPrice');
+        var downPrice = document.getElementById('trDownPrice');
+        var upLiq = document.getElementById('trUpLiq');
+        var downLiq = document.getElementById('trDownLiq');
+        var isClosed = market && (market.resolved || market.closed === true);
+        if (!isClosed && market) {
+            var ed = market.closeTime || market.endDate;
+            if (ed) { try { isClosed = new Date(ed).getTime() < Date.now(); } catch(e) {} }
+        }
+        if (!isClosed && book && book.bids && book.asks) {
+            var idx = _termSelectedOutcome ? _termSelectedOutcome.index : 0;
+            var otherIdx = 1 - idx;
+            var sumBids = 0, sumAsks = 0;
+            var bidArr = (book.bids || []).slice(0, 10);
+            var askArr = (book.asks || []).slice(0, 10);
+            for (var i = 0; i < bidArr.length; i++) { sumBids += parseFloat(Array.isArray(bidArr[i]) ? bidArr[i][1] : (bidArr[i].size||0)); }
+            for (var i = 0; i < askArr.length; i++) { sumAsks += parseFloat(Array.isArray(askArr[i]) ? askArr[i][1] : (askArr[i].size||0)); }
+            var otherBook = _obCache[otherIdx] && _obCache[otherIdx].data;
+            var otherBids = 0, otherAsks = 0;
+            if (otherBook) {
+                var oBids = (otherBook.bids || []).slice(0, 10);
+                var oAsks = (otherBook.asks || []).slice(0, 10);
+                for (var i = 0; i < oBids.length; i++) { otherBids += parseFloat(Array.isArray(oBids[i]) ? oBids[i][1] : (oBids[i].size||0)); }
+                for (var i = 0; i < oAsks.length; i++) { otherAsks += parseFloat(Array.isArray(oAsks[i]) ? oAsks[i][1] : (oAsks[i].size||0)); }
+            }
+            var idxLiq = sumBids + sumAsks;
+            var otherLiq = otherBids + otherAsks;
+            var totalLiq = idxLiq + otherLiq || 1;
+            var upPct = idx === 0 ? (idxLiq / totalLiq * 100) : (otherLiq / totalLiq * 100);
+            var downPct = idx === 0 ? (otherLiq / totalLiq * 100) : (idxLiq / totalLiq * 100);
+            if (upFill) upFill.style.width = Math.min(100, upPct) + '%';
+            if (downFill) downFill.style.width = Math.min(100, downPct) + '%';
+            if (upPrice) upPrice.textContent = isClosed ? '0.0\u00a2' : upPct.toFixed(1) + '\u00a2';
+            if (downPrice) downPrice.textContent = isClosed ? '0.0\u00a2' : downPct.toFixed(1) + '\u00a2';
+            if (upLiq) upLiq.textContent = 'liq $' + (isClosed ? '0' : _fmtLiq(idxLiq));
+            if (downLiq) downLiq.textContent = 'liq $' + (isClosed ? '0' : _fmtLiq(otherLiq));
+        } else {
+            if (upFill) upFill.style.width = '0%';
+            if (downFill) downFill.style.width = '0%';
+            if (upPrice) upPrice.textContent = isClosed ? '0.0\u00a2' : '50.0\u00a2';
+            if (downPrice) downPrice.textContent = isClosed ? '0.0\u00a2' : '50.0\u00a2';
+            if (upLiq) upLiq.textContent = isClosed ? 'liq $0' : 'liq $0';
+            if (downLiq) downLiq.textContent = isClosed ? 'liq $0' : 'liq $0';
+        }
+    }
+    function _fmtLiq(v) { if (v >= 1000) return (v/1000).toFixed(1)+'k'; return v.toFixed(0); }
+
+    function _updateTokenOb(tokenId) {
+        _obConnectLiveWs(tokenId);
+        _fetchOrderBook(tokenId).then(function(book) {
+            if (book) { _obCache[tokenId] = { data: book, ts: Date.now() }; _renderOrderBook(book); }
+        });
     }
 
     // ====================== STRATEGIES STATE ======================
