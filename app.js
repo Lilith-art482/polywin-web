@@ -4534,6 +4534,11 @@
             var balEl = document.getElementById('trModeBalance');
             if (balEl && _termState === 'demo') balEl.textContent = '$' + fmtNum((_demoBalance || 0).toFixed(0));
         }, 2000);
+
+        // Poll order book every 3 seconds
+        setInterval(function() {
+            _updateOrderBook();
+        }, 3000);
     }
 
     function _updateOrderBook() {
