@@ -4551,12 +4551,14 @@
             var url = GAMMA_API + '/markets?condition_id=' + encodeURIComponent(marketId);
             pageFetch(url).then(function(text) {
                 var data = JSON.parse(text);
+                console.log('DEBUG: gamma response', data);
                 var tid = data && data.clobTokenIds;
+                console.log('DEBUG: clobTokenIds', tid);
                 if (tid) {
                     _termMarket.clobTokenIds = tid;
                     _fetchAndRenderOb(tid[idx]);
                 }
-            }).catch(function() {});
+            }).catch(function(e) { console.log('DEBUG: gamma error', e); });
             return;
         }
         _fetchAndRenderOb(tokenIds[idx]);
