@@ -4775,53 +4775,41 @@
     }
 
     function _updateDepthDisplay(book) {
-        if (!_termMarket) return;
         var market = _termMarket;
-        var upFill = document.getElementById('trUpBarFill');
-        var downFill = document.getElementById('trDownBarFill');
-        var upPrice = document.getElementById('trUpPrice');
-        var downPrice = document.getElementById('trDownPrice');
-        var upLiq = document.getElementById('trUpLiq');
-        var downLiq = document.getElementById('trDownLiq');
-        var isClosed = market && (market.resolved || market.closed === true);
-        if (!isClosed && market) {
+        if (!market) return;
+        var isClosed = market.resolved || market.closed === true;
+        if (!isClosed) {
             var ed = market.closeTime || market.endDate;
             if (ed) { try { isClosed = new Date(ed).getTime() < Date.now(); } catch(e) {} }
         }
-        if (!isClosed && book && book.bids && book.asks) {
-            var idx = _termSelectedOutcome ? _termSelectedOutcome.index : 0;
-            var otherIdx = 1 - idx;
-            var sumBids = 0, sumAsks = 0;
-            var bidArr = (book.bids || []).slice(0, 10);
-            var askArr = (book.asks || []).slice(0, 10);
-            for (var i = 0; i < bidArr.length; i++) { sumBids += parseFloat(Array.isArray(bidArr[i]) ? bidArr[i][1] : (bidArr[i].size||0)); }
-            for (var i = 0; i < askArr.length; i++) { sumAsks += parseFloat(Array.isArray(askArr[i]) ? askArr[i][1] : (askArr[i].size||0)); }
-            var otherBook = _obCache[otherIdx] && _obCache[otherIdx].data;
-            var otherBids = 0, otherAsks = 0;
-            if (otherBook) {
-                var oBids = (otherBook.bids || []).slice(0, 10);
-                var oAsks = (otherBook.asks || []).slice(0, 10);
-                for (var i = 0; i < oBids.length; i++) { otherBids += parseFloat(Array.isArray(oBids[i]) ? oBids[i][1] : (oBids[i].size||0)); }
-                for (var i = 0; i < oAsks.length; i++) { otherAsks += parseFloat(Array.isArray(oAsks[i]) ? oAsks[i][1] : (oAsks[i].size||0)); }
+        var ops = parseOutcomes(market);
+        if (ops && ops.length >= 2) {
+            var upP = isClosed ? 0 : (ops[0].price || 50);
+            var downP = isClosed ? 0 : (ops[1].price || 50);
+            var upEl = document.getElementById('trUpBarFill');
+            var downEl = document.getElementById('trDownBarFill');
+            if (upEl) upEl.style.width = Math.min(100, upP) + '%';
+            if (downEl) downEl.style.width = Math.min(100, downP) + '%';
+            var upPriceEl = document.getElementById('trUpPrice');
+            var downPriceEl = document.getElementById('trDownPrice');
+            if (upPriceEl) upPriceEl.textContent = (isClosed ? '0.0' : upP.toFixed(1)) + '\u00a2';
+            if (downPriceEl) downPriceEl.textContent = (isClosed ? '0.0' : downP.toFixed(1)) + '\u00a2';
+            // Update liq if order book data available
+            if (!isClosed && book && book.bids && book.asks) {
+                var idx = _termSelectedOutcome ? _termSelectedOutcome.index : 0;
+                var otherIdx = 1 - idx;
+                var sumBids = 0, sumAsks = 0, otherBids = 0, otherAsks = 0;
+                function sumTop10(arr) { var s = 0; for (var i = 0; i < arr.length && i < 10; i++) { s += parseFloat(Array.isArray(arr[i]) ? arr[i][1] : (arr[i].size||0)); } return s; }
+                sumBids = sumTop10(book.bids); sumAsks = sumTop10(book.asks);
+                var otherBook = _obCache[otherIdx] && _obCache[otherIdx].data;
+                if (otherBook) { otherBids = sumTop10(otherBook.bids); otherAsks = sumTop10(otherBook.asks); }
+                var idxLiq = sumBids + sumAsks;
+                var otherLiq = otherBids + otherAsks;
+                var upLiqEl = document.getElementById('trUpLiq');
+                var downLiqEl = document.getElementById('trDownLiq');
+                if (upLiqEl) upLiqEl.textContent = 'liq $' + (idx === 0 ? _fmtLiq(idxLiq) : _fmtLiq(otherLiq));
+                if (downLiqEl) downLiqEl.textContent = 'liq $' + (idx === 0 ? _fmtLiq(otherLiq) : _fmtLiq(idxLiq));
             }
-            var idxLiq = sumBids + sumAsks;
-            var otherLiq = otherBids + otherAsks;
-            var totalLiq = idxLiq + otherLiq || 1;
-            var upPct = idx === 0 ? (idxLiq / totalLiq * 100) : (otherLiq / totalLiq * 100);
-            var downPct = idx === 0 ? (otherLiq / totalLiq * 100) : (idxLiq / totalLiq * 100);
-            if (upFill) upFill.style.width = Math.min(100, upPct) + '%';
-            if (downFill) downFill.style.width = Math.min(100, downPct) + '%';
-            if (upPrice) upPrice.textContent = isClosed ? '0.0\u00a2' : upPct.toFixed(1) + '\u00a2';
-            if (downPrice) downPrice.textContent = isClosed ? '0.0\u00a2' : downPct.toFixed(1) + '\u00a2';
-            if (upLiq) upLiq.textContent = 'liq $' + (isClosed ? '0' : _fmtLiq(idxLiq));
-            if (downLiq) downLiq.textContent = 'liq $' + (isClosed ? '0' : _fmtLiq(otherLiq));
-        } else {
-            if (upFill) upFill.style.width = '0%';
-            if (downFill) downFill.style.width = '0%';
-            if (upPrice) upPrice.textContent = isClosed ? '0.0\u00a2' : '50.0\u00a2';
-            if (downPrice) downPrice.textContent = isClosed ? '0.0\u00a2' : '50.0\u00a2';
-            if (upLiq) upLiq.textContent = isClosed ? 'liq $0' : 'liq $0';
-            if (downLiq) downLiq.textContent = isClosed ? 'liq $0' : 'liq $0';
         }
     }
     function _fmtLiq(v) { if (v >= 1000) return (v/1000).toFixed(1)+'k'; return v.toFixed(0); }
